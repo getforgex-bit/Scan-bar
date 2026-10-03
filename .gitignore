@@ -5,3 +5,4 @@ dist
 .dev-credentials.txt
 *.log
 .cache
+.wrangler

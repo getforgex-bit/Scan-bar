@@ -1,0 +1,29 @@
+// Scan-bar en Cloudflare: Worker + contenedor con la app de Node (imagen: ../Dockerfile).
+// Requisitos: plan Workers Paid (Containers), Docker en la máquina que despliega (o el flujo de GitHub Actions),
+// y un PostgreSQL administrado (Neon) en el secreto DATABASE_URL. Pasos completos: docs/DESPLIEGUE.md.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "scan-bar",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "containers": [
+    {
+      "class_name": "ScanbarContainer",
+      "image": "../Dockerfile",
+      "image_build_context": "..",
+      // Una instancia: sesiones en caché y límites de tasa de un solo proceso (las sesiones viven en la base).
+      "max_instances": 1,
+      // 1/4 vCPU, 1 GiB de memoria, 4 GB de disco
+      "instance_type": "basic"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [{ "name": "SCANBAR", "class_name": "ScanbarContainer" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["ScanbarContainer"] }],
+  "vars": {
+    // Minutos entre revisiones de los repositorios de las webs (solo se sincroniza lo que cambió).
+    "SYNC_INTERVAL_MIN": "10"
+  },
+  "observability": { "enabled": true }
+}

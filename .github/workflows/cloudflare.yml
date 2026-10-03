@@ -1,0 +1,56 @@
+# Pruebas en cada cambio y despliegue de Scan-bar en Cloudflare al llegar a main.
+# El despliegue necesita los secretos del repositorio CLOUDFLARE_API_TOKEN y CLOUDFLARE_ACCOUNT_ID (docs/DESPLIEGUE.md);
+# sin ellos, el flujo solo prueba. Docker ya viene en el runner: aquí se construye la imagen del contenedor.
+name: Pruebas y despliegue
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: scanbar-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  pruebas:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  desplegar:
+    needs: pruebas
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Sin credenciales de Cloudflare no se despliega
+        if: env.CLOUDFLARE_API_TOKEN == ''
+        run: echo "::notice::Falta el secreto CLOUDFLARE_API_TOKEN; ver docs/DESPLIEGUE.md"
+      - uses: actions/checkout@v4
+        if: env.CLOUDFLARE_API_TOKEN != ''
+      - uses: actions/setup-node@v4
+        if: env.CLOUDFLARE_API_TOKEN != ''
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: cloudflare/package-lock.json
+      - name: Desplegar Worker y contenedor
+        if: env.CLOUDFLARE_API_TOKEN != ''
+        working-directory: cloudflare
+        run: |
+          npm ci
+          npx wrangler deploy

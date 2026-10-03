@@ -16,6 +16,7 @@ import { registerAdmin, redactHeaders, redactQuery } from './admin';
 import { registerBuilds, bomHash } from './builds';
 import { registerWeb } from './web';
 import { issueProductCode } from './catalog';
+import { isReservedEmail } from './bootstrap';
 import { newSecret, verifyTotp, otpauthUri, sha256 } from './totp';
 import { securityHeaders, rateLimiter, isLocalHost, encryptSecret, decryptSecret, passwordProblem, PAGE_CSP } from './security';
 import { STAFF, ADMIN_UNLOCK_MS, SessionStore, type Role, type Session } from './session';
@@ -155,6 +156,7 @@ export async function buildApp(opts: AppOpts = {}): Promise<FastifyInstance & { 
     limit(reply, `register:${req.ip}`, 5, 3600_000);
     const b = z.object({ email: z.string().email().max(200), password: z.string().max(200) }).parse(req.body);
     const email = b.email.toLowerCase();
+    if (isReservedEmail(email)) throw new HttpError(409, 'ya_registrado', 'Ese correo ya tiene una cuenta; inicia sesión');
     const problem = passwordProblem(b.password, email);
     if (problem) throw new HttpError(422, 'password_debil', problem);
     const hash = await argon2.hash(b.password, { type: argon2.argon2id });

@@ -87,7 +87,8 @@ class Hub {
     const c = new pg.Client({ connectionString: url });
     this.client = c; await c.connect(); await c.query('LISTEN events');
     c.on('notification', m => this.broadcast(m.payload ?? ''));
-    c.on('error', () => { this.client = null; });
+    // Si la base corta la conexión, se cierran los flujos: el navegador reconecta (retry) y se vuelve a escuchar.
+    c.on('error', () => { if (this.client === c) this.client = null; for (const s of this.subs.values()) for (const w of s) w.end(); this.subs.clear(); });
   }
   broadcast(payload: string) { for (const set of this.subs.values()) for (const w of set) w.write(`data: ${payload}\n\n`); }
   count(uid: number) { return this.subs.get(uid)?.size ?? 0; }

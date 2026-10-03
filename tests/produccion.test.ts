@@ -65,6 +65,23 @@ describe('arranque de producción', () => {
     expect(me.tenant.slug).toBe('cafe-motz');
   });
 
+  it('el secreto manda: cambiar ADMIN_PASSWORD y reiniciar cambia la contraseña y cierra las sesiones; nadie puede registrar los correos reservados', async () => {
+    for (const email of ['admin@scanbar.mx', 'caja.yokrem@scanbar.mx', 'otro@scanbar.mx'])
+      expect((await call(app, 'POST', '/v1/auth/register', {}, { email, password: 'Una-Clave-Bastante-Larga-1' })).statusCode).toBe(409);
+    await bootstrap(ctx.db.adminRw, ENV);
+    const before = await call(app, 'POST', '/v1/auth/login', {}, { email: 'admin@scanbar.mx', password: ENV.ADMIN_PASSWORD });
+    const sid = before.cookies.find((c: any) => c.name === 'sid').value;
+    const NEW = { ...ENV, ADMIN_PASSWORD: 'Otra-Cumbre-De-La-Sierra-2027' };
+    expect(await bootstrap(ctx.db.adminRw, NEW)).toContain('Contraseña actualizada: admin@scanbar.mx');
+    const fresh = await buildApp({ db: makeDb(ctx.db.urls), logRequests: false, timers: false }); // como un contenedor recién arrancado
+    try {
+      expect((await call(fresh, 'GET', '/v1/auth/me', { sid })).json()).toEqual({ anonymous: true });
+      expect((await call(fresh, 'POST', '/v1/auth/login', {}, { email: 'admin@scanbar.mx', password: ENV.ADMIN_PASSWORD })).statusCode).toBe(401);
+      expect((await call(fresh, 'POST', '/v1/auth/login', {}, { email: 'admin@scanbar.mx', password: NEW.ADMIN_PASSWORD })).statusCode).toBe(200);
+    } finally { await fresh.close(); await (fresh as any).db.close(); }
+    expect(await bootstrap(ctx.db.adminRw, NEW)).not.toContain('Contraseña actualizada: admin@scanbar.mx');
+  });
+
   it('la URL de cada web se deduce de la cuenta de workers.dev de Scan-bar (o de WEB_URL_<NEGOCIO>)', async () => {
     const src = SOURCES.find(s => s.slug === 'cafe-motz')!;
     expect(siteUrl(src, {})).toBeNull();

@@ -1,0 +1,14 @@
+node_modules
+**/node_modules
+apps/web/dist
+cloudflare
+.git
+.github
+.cache
+.pgdata
+.env
+.env.*
+.dev-credentials.txt
+tests
+docs
+*.log

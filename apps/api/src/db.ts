@@ -22,6 +22,8 @@ export function makeDb(urls: DbUrls = envUrls()): Db {
   const app = new pg.Pool({ connectionString: urls.appUrl, max: 10 });
   const admin = new pg.Pool({ connectionString: urls.adminUrl, max: 3 });
   const adminRw = new pg.Pool({ connectionString: urls.adminRwUrl, max: 3 });
+  // Un Postgres administrado (Neon) cierra conexiones inactivas al suspenderse: sin este manejador, el proceso se caería.
+  for (const p of [app, admin, adminRw]) p.on('error', e => console.warn(`Conexión inactiva cerrada por la base: ${e.message}`));
   return { app, admin, adminRw, urls, close: async () => { await app.end(); await admin.end(); await adminRw.end(); } };
 }
 

@@ -18,3 +18,4 @@ CREATE TABLE sessions (
 );
 CREATE INDEX sessions_expires ON sessions (expires_at);
 GRANT SELECT, INSERT, UPDATE, DELETE ON sessions TO app_rw;
+GRANT SELECT, DELETE ON sessions TO admin_rw;  -- cerrar las sesiones de una cuenta cuya contraseña cambió
