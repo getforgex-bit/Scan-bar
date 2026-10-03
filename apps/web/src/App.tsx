@@ -7,6 +7,7 @@ import { MyBuilds } from './MyBuilds';
 import { Console } from './Console';
 import { Campo } from './Campo';
 import { AuthDialog, type AuthMode } from './Auth';
+import { SHOW_CONFIGURATOR } from './flags';
 
 type Mode = 'nav' | 'caja';
 type Tab = 'scan' | 'cfg' | 'mine' | 'cat' | 'con' | 'campo';
@@ -14,9 +15,6 @@ type Line = { gtin: string; name: string; priceCents: number; qty: number; kind:
 type Receipt = { id: number; totalCents: number; taxCents: number; items: { gtin: string; name: string; qty: number; unitPriceCents: number }[]; at: string; pending?: boolean };
 
 const isStaff = (me: Me | null) => me?.role === 'superadmin' || me?.role === 'operador_pos';
-// El configurador propio de Scan-bar queda oculto: cada negocio configura en su página web y Scan-bar
-// emite el código de esa configuración (docs/INTEGRACION-WEBS.md). Cambia a true para volver a mostrarlo.
-const SHOW_CONFIGURATOR = false;
 // Ruta pública del configurador de un negocio: /t/{slug}/configurador
 const pathTenant = () => (SHOW_CONFIGURATOR ? /^\/t\/([a-z0-9-]+)\/configurador\/?$/.exec(location.pathname)?.[1] : undefined);
 
@@ -26,7 +24,7 @@ export function App() {
   const refresh = useCallback(() => api<Me | { anonymous: true }>('/v1/auth/me').then(r => setMe('anonymous' in r ? null : r)).catch(() => setMe(null)), []);
   useEffect(() => { refresh(); }, [refresh]);
   useEffect(() => { window.addEventListener('admin-locked', refresh); return () => window.removeEventListener('admin-locked', refresh); }, [refresh]);
-  if (me === undefined) return <main><p>Cargando…</p></main>;
+  if (me === undefined) return <main><p role="status">Cargando…</p></main>;
   return <Shell key={me?.email ?? 'anon'} me={me} refresh={refresh} />;
 }
 
@@ -113,21 +111,22 @@ function Shell({ me, refresh }: { me: Me | null; refresh: () => Promise<void> })
   };
   const logout = async () => { await api('/v1/auth/logout', { method: 'POST' }); await refresh(); };
 
-  const tabs: [Tab, string, boolean][] = [['scan', 'Escáner', true], ['cfg', 'Configurador', SHOW_CONFIGURATOR], ['mine', 'Mis configuraciones', !!me], ['cat', 'Catálogo', staff], ['con', 'Administración', !!admin], ['campo', 'Campo', !!admin]];
+  const tabs: [Tab, string, boolean][] = [['scan', 'Escáner', true], ['cfg', 'Configurador', SHOW_CONFIGURATOR], ['mine', 'Mis configuraciones', SHOW_CONFIGURATOR && !!me], ['cat', 'Catálogo', staff], ['con', 'Administración', !!admin], ['campo', 'Campo', !!admin]];
 
   return (
     <>
       <header className="top">
-        <div><span className="label">{me?.tenant?.name ?? 'Sistema universal de códigos'}</span><h1 className="serif">Códigos</h1></div>
-        <div role="radiogroup" aria-label="Modo del lector" className="modes">
+        <div><span className="label">{me?.tenant?.name ?? 'Sistema universal de códigos'}</span><h1 className="serif">Scan-bar</h1></div>
+        {/* Visitantes: solo el escáner. El personal elige modo (Navegación / Caja) y ve sus secciones. */}
+        {staff && <div role="radiogroup" aria-label="Modo del lector" className="modes">
           {(['nav', 'caja'] as Mode[]).map(m => <button key={m} role="radio" aria-checked={mode === m} className={'mode' + (mode === m ? ' active' : '')} onClick={() => setMode(m)}>{m === 'nav' ? 'Navegación' : 'Caja'}</button>)}
-        </div>
-        <nav className="row gap" aria-label="Secciones">
+        </div>}
+        {tabs.filter(t => t[2]).length > 1 && <nav className="row gap" aria-label="Secciones">
           {tabs.filter(t => t[2]).map(([k, l]) => <button key={k} className={'link' + (tab === k ? ' active' : '')} aria-current={tab === k ? 'page' : undefined} onClick={() => setTab(k)}>{l}</button>)}
-        </nav>
+        </nav>}
         <div className="row gap account">
           {me ? <><span className="label" title={me.role}>{me.email}</span><button className="link" onClick={logout}>Salir</button></>
-            : <><button className="link" onClick={() => setAuth({ mode: 'login' })}>Entrar</button><button className="secondary" onClick={() => setAuth({ mode: 'register' })}>Registrarse</button></>}
+            : <><button className="link" onClick={() => setAuth({ mode: 'login' })}>Entrar</button>{SHOW_CONFIGURATOR && <button className="secondary" onClick={() => setAuth({ mode: 'register' })}>Registrarse</button>}</>}
         </div>
       </header>
       <main>
@@ -136,10 +135,11 @@ function Shell({ me, refresh }: { me: Me | null; refresh: () => Promise<void> })
         {tab === 'scan' && (
           <div className={'grid ' + (mode === 'caja' ? 'pos' : '')}>
             <div>
+              <h2>{mode === 'caja' ? 'Cobrar' : 'Escanea un código'}</h2>
+              {mode === 'nav' && <p className="label">Apunta la cámara al código de barras o al QR de un producto para abrir su página. No necesitas cuenta; si la cámara no funciona, escribe los 13 dígitos.</p>}
               <Scanner onReading={onReading} paused={!!external} />
               {external && <div className="notice" role="alertdialog" aria-label="QR externo"><p>QR con dominio no registrado:</p><p className="mono wrap">{external}</p><div className="row gap"><button className="secondary" onClick={() => { window.open(external, '_blank', 'noopener'); setExternal(null); }}>Abrir de todos modos</button><button className="link" onClick={() => setExternal(null)}>Descartar</button></div></div>}
               {notice && <p className="err" role="alert">{notice}</p>}
-              {!staff && <p className="label">Escanea un código para abrir la página del producto. No necesitas cuenta.</p>}
             </div>
             {mode === 'caja' && (
               <aside className="cart">

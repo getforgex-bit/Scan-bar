@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { api, ApiError } from './api';
+import { SHOW_CONFIGURATOR } from './flags';
 
 export type AuthMode = 'login' | 'register';
 
@@ -59,10 +60,10 @@ export function AuthDialog({ mode, note, onClose, onDone, onSwitch }: { mode: Au
         {err && <p className="err" role="alert">⚠ {err}</p>}
         <button type="submit" disabled={busy || mismatch}>{register ? 'Registrarme' : 'Entrar'}</button>
       </form>
-      <p className="label">
+      {SHOW_CONFIGURATOR ? <p className="label">
         {register ? '¿Ya tienes cuenta? ' : '¿No tienes cuenta? '}
         <button className="link inline" onClick={() => { setErr(''); onSwitch(register ? 'login' : 'register'); }}>{register ? 'Entrar' : 'Regístrate'}</button>
-      </p>
+      </p> : <p className="label">Solo para el personal: administrador y cajas de cada negocio. Para escanear no hace falta cuenta.</p>}
       {register && <p className="label">La cuenta es de cliente: guarda tus configuraciones. El personal de cada negocio recibe su acceso del administrador.</p>}
     </Modal>
   );

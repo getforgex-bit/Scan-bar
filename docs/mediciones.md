@@ -58,3 +58,10 @@ Mismo entorno local. `POST /v1/builds` con sesión de operador, 20 peticiones/s 
 
 ## Auditoría de accesibilidad tras los cambios (axe-core 4.13, 2026-10-01)
 0 infracciones en: configurador anónimo (café), diálogo de registro/entrada, Mis configuraciones, Administración (pantalla de contraseña, Configuradores, editor JSON, Productos) y configurador con sesión de personal, a ancho de escritorio; y en Escáner, Configurador, Mis configuraciones, Catálogo y Administración a 390 px, sin desplazamiento horizontal. Mismas limitaciones que la auditoría anterior.
+
+## Auditoría de accesibilidad de la versión simplificada (axe-core 4.13, Playwright + Chromium 141, 2026-10-03)
+Etiquetas `wcag2a`, `wcag2aa`, `wcag21a`, `wcag21aa` y `best-practice`, con la app en modo producción (CSP real) sobre la base sincronizada con las seis webs (245 productos).
+- Pantallas: Escáner de visitante (1280 px y 390 px), diálogo Entrar, Caja y Catálogo con cuenta de caja, activación del segundo factor, y en la consola Productos y etiquetas (antes y después de agregar un producto con variantes), Negocios, Usuarios, Métricas, Llaves, Base de datos y Depurador.
+- Resultado: **0 infracciones** en las 14 pasadas. Único resultado "incompleto": `video-caption` en la vista de la cámara (vídeo en vivo, no aplica).
+- Control: la misma inyección sobre una página con errores conocidos sí reporta 8 reglas (`image-alt`, `button-name`, `label`…), así que la auditoría no es un falso negativo.
+- Limitaciones: el navegador no tiene cámara (se audita el estado "sin cámara" con captura manual); la revisión con lector de pantalla por una persona sigue pendiente.

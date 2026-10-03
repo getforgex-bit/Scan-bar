@@ -8,7 +8,16 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      manifest: { name: 'Sistema Universal de Códigos', short_name: 'Códigos', start_url: '/', display: 'standalone', background_color: '#F8F9FA', theme_color: '#F8F9FA', icons: [] },
+      manifest: {
+        name: 'Scan-bar · Sistema Universal de Códigos', short_name: 'Scan-bar', lang: 'es-MX', start_url: '/', display: 'standalone', background_color: '#F8F9FA', theme_color: '#F8F9FA',
+        description: 'Escanea el código de barras o el QR de un producto para abrir su página; cobra en caja e imprime etiquetas.',
+        icons: [
+          { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+          { src: '/icon-512.png', sizes: '512x512', type: 'image/png' },
+          { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          { src: '/icon.svg', sizes: 'any', type: 'image/svg+xml' },
+        ],
+      },
       workbox: { globPatterns: ['**/*.{js,css,html,wasm,woff2,svg}'], maximumFileSizeToCacheInBytes: 8_000_000, navigateFallbackDenylist: [/^\/v1\//, /^\/01\//] },
     }),
   ],

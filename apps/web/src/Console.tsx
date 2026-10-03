@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, ApiError, money, fmtGtin, type Me, type Product } from './api';
+import { SHOW_CONFIGURATOR } from './flags';
 
 type Section = 'tenants' | 'cfgs' | 'products' | 'users' | 'keys' | 'db' | 'req' | 'metrics' | 'live';
-const SECTIONS: [Section, string][] = [['tenants', 'Negocios'], ['cfgs', 'Configuradores'], ['products', 'Productos y etiquetas'], ['users', 'Usuarios'], ['keys', 'Llaves'], ['db', 'Base de datos'], ['req', 'Depurador'], ['metrics', 'Métricas'], ['live', 'En vivo']];
+// Primero lo de todos los días (productos, etiquetas, sincronizar); después lo técnico.
+const SECTIONS: [Section, string][] = [['products', 'Productos y etiquetas'], ['tenants', 'Negocios'], ['users', 'Usuarios'], ['metrics', 'Métricas'], ['live', 'En vivo'],
+  ...(SHOW_CONFIGURATOR ? [['cfgs', 'Configuradores'] as [Section, string]] : []), ['keys', 'Llaves'], ['db', 'Base de datos'], ['req', 'Depurador']];
 const msg = (e: unknown) => (e instanceof ApiError ? e.message : 'Error de red');
 
 /** Funciones de administrador: piden la contraseña (15 min de vigencia, se renueva con el uso) y exigen segundo factor. */
 export function Console({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
-  const [sec, setSec] = useState<Section>('tenants');
+  const [sec, setSec] = useState<Section>('products');
   if (!me.adminUnlocked) return <Unlock onDone={refresh} />;
   if (!me.totp) return <TotpSetup onDone={refresh} />;
   return (
@@ -105,6 +108,9 @@ function Configurators() {
 type AdminProduct = Product & { tenantId: number; active: boolean; origin: 'repo' | 'scanbar'; description: string; imageUrl: string | null; variantOf: string | null; variant: string | null };
 const ORIGIN_LABEL = { repo: 'código de la web', scanbar: 'Scan-bar' } as const;
 
+/** SKU sugerido a partir del nombre: "Vestido rojo de lino" → VESTIDO-ROJO-DE-LINO (se puede cambiar en Opciones avanzadas). */
+const skuFrom = (name: string) => name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, '-').slice(0, 40).replace(/^-+|-+$/g, '');
+
 /** "CH, M, G" o "Chico=45, Grande=55" (precio en pesos) → variantes. */
 function parseVariants(text: string): { label: string; priceCents?: number }[] {
   return text.split(',').map(x => x.trim()).filter(Boolean).map(x => {
@@ -124,7 +130,7 @@ function Products() {
   const [data, setData] = useState<AdminProduct[] | null>(null); const [err, setErr] = useState('');
   const reload = useCallback(() => { if (tid) api<AdminProduct[]>(`/v1/admin/products?tenantId=${tid}`).then(setData).catch(e => setErr(msg(e))); }, [tid]);
   useEffect(() => { setData(null); reload(); }, [reload]);
-  const empty = { sku: '', name: '', category: '', price: '', stock: '10', description: '', imageUrl: '', variants: '', attrs: '{}' };
+  const empty = { sku: '', skuTouched: false, name: '', category: '', price: '', stock: '10', description: '', imageUrl: '', variants: '', attrs: '{}' };
   const [f, setF] = useState(empty); const [note, setNote] = useState(''); const [edit, setEdit] = useState<AdminProduct | null>(null);
   const cats = [...new Set(data?.map(p => p.category) ?? [])];
   const add = async () => {
@@ -144,7 +150,8 @@ function Products() {
   };
   return (<>
     <h2>Productos y etiquetas</h2>
-    <p className="label">Lo que agregas aquí aparece en la página web del negocio y recibe su código EAN-13/QR al instante. Lo que viene del código de la web se cambia en su repositorio (npm run sync:repos); aquí solo se ajustan sus existencias.</p>
+    <p className="label">Lo que agregas aquí aparece en la página web del negocio y recibe su código EAN-13/QR al instante. Lo que viene del código de la web llega solo desde su repositorio; aquí solo se ajustan sus existencias.</p>
+    <SyncPanel onDone={reload} />
     <div className="formrow">
       <label className="label" htmlFor="pr-t">Página web / negocio</label>
       <select id="pr-t" value={tid} onChange={e => { setTenantId(Number(e.target.value)); setEdit(null); setNote(''); }}>{tenants.data?.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
@@ -152,24 +159,24 @@ function Products() {
     {err && <p className="err">⚠ {err}</p>}
     {tenant && <LabelsPdf tenant={tenant} categories={cats} />}
     <h3>Agregar producto a {tenant?.name}</h3>
-    <div className="formrow">
-      <input aria-label="SKU base" placeholder="SKU (p. ej. VESTIDO-ROJO)" className="mono" value={f.sku} onChange={e => setF({ ...f, sku: e.target.value.toUpperCase() })} />
-      <input aria-label="Nombre" placeholder="Nombre" value={f.name} onChange={e => setF({ ...f, name: e.target.value })} />
-      <input aria-label="Categoría" placeholder="Categoría / sección de la web" list="cats" value={f.category} onChange={e => setF({ ...f, category: e.target.value })} />
+    <div className="fields">
+      <label className="field"><span className="label">Nombre</span><input value={f.name} onChange={e => setF({ ...f, name: e.target.value, sku: f.skuTouched ? f.sku : skuFrom(e.target.value) })} /></label>
+      <label className="field"><span className="label">Categoría (sección de la web)</span><input list="cats" value={f.category} onChange={e => setF({ ...f, category: e.target.value })} /></label>
       <datalist id="cats">{cats.map(c => <option key={c} value={c} />)}</datalist>
-      <input aria-label="Precio en pesos" placeholder="Precio $" inputMode="decimal" value={f.price} onChange={e => setF({ ...f, price: e.target.value })} />
-      <input aria-label="Existencias" placeholder="Existencias" inputMode="numeric" value={f.stock} onChange={e => setF({ ...f, stock: e.target.value })} />
+      <label className="field"><span className="label">Precio en pesos (IVA incluido)</span><input inputMode="decimal" value={f.price} onChange={e => setF({ ...f, price: e.target.value })} /></label>
+      <label className="field"><span className="label">Existencias</span><input inputMode="numeric" value={f.stock} onChange={e => setF({ ...f, stock: e.target.value.replace(/\D/g, '') })} /></label>
+      <label className="field"><span className="label">Variantes (opcional)</span><input placeholder="CH, M, G  ·  o  Chico=45, Grande=55" value={f.variants} onChange={e => setF({ ...f, variants: e.target.value })} aria-describedby="pr-var-help" /></label>
+      <label className="field"><span className="label">Imagen (opcional)</span><input type="url" placeholder="https://…" className="mono" value={f.imageUrl} onChange={e => setF({ ...f, imageUrl: e.target.value })} /></label>
     </div>
-    <div className="formrow">
-      <input aria-label="Variantes" placeholder="Variantes: CH, M, G  ·  o  Chico=45, Grande=55 (opcional)" value={f.variants} onChange={e => setF({ ...f, variants: e.target.value })} />
-      <input aria-label="URL de la imagen" placeholder="Imagen https://… (opcional)" className="mono" value={f.imageUrl} onChange={e => setF({ ...f, imageUrl: e.target.value })} />
-    </div>
-    <div className="formrow">
-      <input aria-label="Descripción" placeholder="Descripción corta (opcional)" value={f.description} onChange={e => setF({ ...f, description: e.target.value })} />
-      <input aria-label="Atributos en JSON" placeholder='Atributos {"clave": "valor"}' className="mono" value={f.attrs} onChange={e => setF({ ...f, attrs: e.target.value })} />
-      <button onClick={add} disabled={!tid || !f.sku || !f.name || !f.category || f.price === ''}>Agregar y generar código</button>
-    </div>
-    <p className="label">Cada variante (talla, tamaño, gramaje) es un producto con su propio código: SKU-BASE-VARIANTE. La categoría decide en qué sección de la web aparece.</p>
+    <p className="label" id="pr-var-help">Cada variante (talla, tamaño, gramaje) recibe su propio código. Con precio (Chico=45) cambia el precio de esa variante.</p>
+    <details><summary>Opciones avanzadas</summary>
+      <div className="fields">
+        <label className="field"><span className="label">SKU (se genera del nombre)</span><input className="mono" value={f.sku} onChange={e => setF({ ...f, sku: e.target.value.toUpperCase(), skuTouched: true })} /></label>
+        <label className="field"><span className="label">Descripción corta</span><input value={f.description} onChange={e => setF({ ...f, description: e.target.value })} /></label>
+        <label className="field"><span className="label">Atributos en JSON</span><input className="mono" placeholder='{"color": "rojo"}' value={f.attrs} onChange={e => setF({ ...f, attrs: e.target.value })} /></label>
+      </div>
+    </details>
+    <button onClick={add} disabled={!tid || !f.sku || !f.name || !f.category || f.price === ''}>Agregar y generar código</button>
     {note && <p className={note.startsWith('⚠') ? 'err' : 'label'} role="status">{note}</p>}
     {edit && <div className="notice stack">
       <h3>Editar {edit.sku}</h3>
@@ -194,6 +201,34 @@ function Products() {
         </td></tr>)}</tbody></table>
     {data && data.length === 0 && <p className="label">Este negocio aún no tiene productos.</p>}
   </>);
+}
+
+type SyncResult = { slug: string; items: number; created: number; updated: number; retired: number; reactivated: number; skipped: number; error?: string };
+type SyncState = { running: boolean; last?: { at: string; results: SyncResult[] } };
+const ago = (iso: string) => { const m = Math.round((Date.now() - Date.parse(iso)) / 60000); return m < 1 ? 'hace un momento' : m < 60 ? `hace ${m} min` : `hace ${Math.round(m / 60)} h`; };
+
+/** Los productos definidos en el código de cada web llegan solos (al arrancar y cada pocos minutos); aquí se ve cuándo y se puede forzar. */
+function SyncPanel({ onDone }: { onDone: () => void }) {
+  const [st, setSt] = useState<SyncState | null>(null); const [busy, setBusy] = useState(false); const [err, setErr] = useState('');
+  useEffect(() => { api<SyncState>('/v1/admin/sync').then(setSt).catch(e => setErr(msg(e))); }, []);
+  const run = async () => {
+    setBusy(true); setErr('');
+    try { setSt(await api<SyncState>('/v1/admin/sync', { method: 'POST' })); onDone(); } catch (e) { setErr(msg(e)); } finally { setBusy(false); }
+  };
+  const results = st?.last?.results ?? [];
+  const failed = results.filter(r => r.error);
+  return (
+    <div className="notice stack">
+      <div className="row between wrapbtns gap">
+        <p role="status">{busy || st?.running ? 'Sincronizando los catálogos de las webs…' : st?.last ? `Catálogos de las webs sincronizados ${ago(st.last.at)}: ${results.reduce((n, r) => n + r.items, 0)} productos${failed.length ? `, ${failed.length} con error` : ''}.` : 'Los catálogos de las webs aún no se han sincronizado en este arranque.'}</p>
+        <button className="secondary" onClick={run} disabled={busy}>{busy ? 'Sincronizando…' : 'Sincronizar ahora'}</button>
+      </div>
+      {results.length > 0 && <details><summary>Detalle por web</summary>
+        <ul className="help">{results.map(r => <li key={r.slug}><b>{r.slug}</b>: {r.error ? <span className="err">⚠ {r.error}</span> : `${r.items} productos · ${r.created} nuevos · ${r.updated} actualizados · ${r.retired} retirados`}</li>)}</ul>
+      </details>}
+      {err && <p className="err" role="alert">⚠ {err}</p>}
+    </div>
+  );
 }
 
 /** Descarga la hoja de etiquetas (PDF) para recortar y pegar: nombre encima de cada código. */
