@@ -274,18 +274,38 @@ export async function buildApp(opts: AppOpts = {}): Promise<FastifyInstance & { 
       `SELECT p.id::int AS id, p.sku, p.name, p.category, p.price_cents AS "priceCents", p.stock, p.attrs, p.active, c.gtin
          FROM products p LEFT JOIN codes c ON c.product_id=p.id WHERE p.active ORDER BY p.category, p.name`)).rows));
 
-  // ---- etiquetas del propio negocio: cada negocio (su caja / su personal) descarga el PDF con todos sus códigos ----
+  // ---- etiquetas: cada negocio (su caja / su personal) descarga el PDF con todos sus códigos; el SuperAdmin, el de
+  // cualquier negocio o el de todos juntos. Nombres y códigos ya son públicos (catálogo de las webs): no pide desbloqueo.
+  const LABEL_TENANTS = `SELECT t.slug, t.name, count(c.gtin)::int AS products,
+      coalesce(array_agg(DISTINCT p.category ORDER BY p.category) FILTER (WHERE c.gtin IS NOT NULL), '{}') AS categories
+    FROM tenants t LEFT JOIN products p ON p.tenant_id = t.id AND p.active LEFT JOIN codes c ON c.product_id = p.id AND c.retired_at IS NULL
+    WHERE $1::smallint IS NULL OR t.id = $1 GROUP BY t.id, t.slug, t.name ORDER BY t.name`;
+  app.get('/v1/labels/tenants', { preHandler: auth('superadmin', 'operador_pos') }, async req => {
+    const s = S(req);
+    return s.role === 'superadmin' ? (await db.admin.query(LABEL_TENANTS, [null])).rows
+      : (await withTenant(db, s.tenantId, tx => tx.query(LABEL_TENANTS, [s.tenantId]))).rows;
+  });
   app.get('/v1/labels.pdf', { preHandler: auth('superadmin', 'operador_pos') }, async (req, reply) => {
     const s = S(req);
     limit(reply, `labels:${s.userId}`, 10, 60_000); // generar el PDF cuesta CPU
     const q = labelsQuery.parse(req.query);
-    const r = await withTenant(db, s.tenantId, async tx => {
-      const t = (await tx.query('SELECT id::int AS id, slug, name FROM tenants WHERE id=$1', [s.tenantId])).rows[0];
-      if (!t) throw new HttpError(404, 'negocio_no_existe', 'Esta cuenta no tiene negocio');
-      return buildLabels((sql, params) => tx.query(sql, params), t, q);
-    });
+    let r: Awaited<ReturnType<typeof buildLabels>>; let tenantId: number | null = s.tenantId;
+    if (q.tenant && s.role === 'superadmin') {
+      const all = (await db.admin.query('SELECT id::int AS id, slug, name FROM tenants ORDER BY name')).rows;
+      const ts = q.tenant === '*' ? all : all.filter(t => t.slug === q.tenant);
+      if (!ts.length) throw new HttpError(404, 'negocio_no_existe', 'Ese negocio no existe');
+      r = await buildLabels((sql, params) => db.admin.query(sql, params), ts, q);
+      tenantId = ts.length === 1 ? ts[0].id : null;
+    } else {
+      r = await withTenant(db, s.tenantId, async tx => {
+        const t = (await tx.query('SELECT id::int AS id, slug, name FROM tenants WHERE id=$1', [s.tenantId])).rows[0];
+        if (!t) throw new HttpError(404, 'negocio_no_existe', 'Esta cuenta no tiene negocio');
+        if (q.tenant && q.tenant !== t.slug) throw new HttpError(403, 'solo_tu_negocio', 'Solo puedes descargar las etiquetas de tu negocio');
+        return buildLabels((sql, params) => tx.query(sql, params), [t], q);
+      });
+    }
     await db.adminRw.query('INSERT INTO audit_log (tenant_id,user_id,action,after) VALUES ($1,$2,$3,$4)',
-      [s.tenantId, s.userId, 'labels.pdf', JSON.stringify({ products: r.products, labels: r.labels, ...q })]);
+      [tenantId, s.userId, 'labels.pdf', JSON.stringify({ products: r.products, labels: r.labels, ...q })]);
     return sendLabels(reply, r);
   });
 

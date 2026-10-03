@@ -319,13 +319,27 @@ Respuesta **200**:
 
 ## GET /v1/labels.pdf
 
-Cada negocio descarga desde su cuenta (caja o personal) la hoja de etiquetas con todos sus códigos: siempre el negocio de la sesión (RLS), nunca otro. Mismos parámetros que la versión de la consola; 404 si no hay productos para esas opciones; 10 descargas por minuto por cuenta.
+Cada negocio descarga desde su cuenta (caja o personal) la hoja de etiquetas con todos sus códigos: el negocio de la sesión (RLS); `tenant=<slug>` de otro negocio → 403. El SuperAdmin elige con `tenant=<slug>` cualquier negocio o `tenant=*` todos en un archivo (cada negocio en páginas propias). Mismos parámetros que la versión de la consola; 404 si no hay productos para esas opciones; 10 descargas por minuto por cuenta.
 
 ```bash
 curl -X GET -H 'cookie: sid=<sesión>' -H 'X-Requested-With: x' 'http://localhost:3000/v1/labels.pdf?paper=letter&qr=0&copies=1'
 ```
 
-Respuesta **200**: PDF (`attachment; filename="etiquetas-<negocio>-<fecha>.pdf"`).
+Respuesta **200**: PDF (`attachment; filename="etiquetas-<negocio>-<fecha>.pdf"`; con `tenant=*`, `etiquetas-todos-los-negocios-<fecha>.pdf`).
+
+## GET /v1/labels/tenants
+
+Negocios cuyas etiquetas puede descargar la cuenta (para el selector de Catálogo): el personal, solo el suyo; el SuperAdmin, todos. Con productos activos con código y sus categorías.
+
+```bash
+curl -X GET -H 'cookie: sid=<sesión>' -H 'X-Requested-With: x' 'http://localhost:3000/v1/labels/tenants'
+```
+
+Respuesta **200**:
+
+```json
+[{"slug":"tienda-0002","name":"Cómputo Nova","products":26,"categories":["case","cpu","gpu","motherboard","psu","ram","storage"]}]
+```
 
 ## GET /v1/admin/db/:vista
 

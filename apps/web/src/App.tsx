@@ -7,7 +7,7 @@ import { MyBuilds } from './MyBuilds';
 import { Console } from './Console';
 import { Campo } from './Campo';
 import { AuthDialog, type AuthMode } from './Auth';
-import { LabelsPdf } from './Labels';
+import { CatalogLabels } from './Labels';
 import { SHOW_CONFIGURATOR } from './flags';
 
 type Mode = 'nav' | 'caja';
@@ -167,7 +167,8 @@ function Shell({ me, refresh }: { me: Me | null; refresh: () => Promise<void> })
         {tab === 'campo' && admin && <Campo />}
         {tab === 'cat' && staff && (
           <section className="stack"><h2>Catálogo y etiquetas</h2>
-            {me?.tenant && <LabelsPdf url="/v1/labels.pdf" slug={me.tenant.slug} name={me.tenant.name} categories={[...new Set(products.map(p => p.category))].sort()} />}
+            {me && <CatalogLabels me={me} />}
+            {me?.tenant && <h3>Productos de {me.tenant.name}</h3>}
             <table><thead><tr><th className="label">Producto</th><th className="label">Categoría</th><th className="label">GTIN</th><th className="label num">Stock</th><th className="label num">Precio</th></tr></thead>
               <tbody>{products.map(p => <tr key={p.id}><td>{p.name}<small className="label"> {p.sku}</small></td><td className="label">{p.category}</td><td className="mono">{fmtGtin(p.gtin)}</td><td className="num mono">{p.stock}</td><td className="num mono">{money(p.priceCents)}</td></tr>)}</tbody></table>
           </section>

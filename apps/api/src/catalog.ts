@@ -7,7 +7,7 @@ import type { Db, Tx } from './db';
 import type { Session } from './session';
 import { buildGtin13 } from '../../../packages/codes/src/index';
 import { skuSchema } from './web';
-import { labelSheet, MAX_LABELS } from './labels';
+import { labelBook, MAX_LABELS } from './labels';
 
 export async function issueProductCode(tx: Tx, tenantId: number, productId: number): Promise<string> {
   const t = (await tx.query('SELECT gs1_prefix, company_prefix FROM tenants WHERE id=$1', [tenantId])).rows[0];
@@ -46,6 +46,8 @@ export const labelsQuery = z.object({
   paper: z.enum(['letter', 'a4']).default('letter'), qr: z.enum(['0', '1']).default('0'),
   copies: z.coerce.number().int().min(1).max(50).default(1), scale: z.coerce.number().int().min(80).max(100).default(100),
   category: z.string().max(40).optional(), origin: z.enum(['repo', 'scanbar']).optional(),
+  /** /v1/labels.pdf: slug del negocio o "*" = todos (solo SuperAdmin; el personal de un negocio, solo el suyo). */
+  tenant: z.union([z.literal('*'), z.string().regex(/^[a-z0-9-]{2,40}$/)]).optional(),
 });
 
 const cols = `p.id::int AS id, p.tenant_id AS "tenantId", p.sku, p.name, p.category, p.price_cents AS "priceCents", p.stock, p.attrs, p.active, p.origin,
@@ -124,30 +126,38 @@ export function registerCatalogAdmin(app: FastifyInstance, db: Db, h: { admin: G
   app.get('/v1/admin/tenants/:id/labels.pdf', { preHandler: h.admin }, async (req, reply) => {
     const t = await tenantOf(Number((req.params as { id: string }).id));
     const q = labelsQuery.parse(req.query);
-    const r = await buildLabels((sql, params) => db.admin.query(sql, params), t, q);
+    const r = await buildLabels((sql, params) => db.admin.query(sql, params), [t], q);
     await h.audit(S(req), t.id, 'labels.pdf', null, { products: r.products, labels: r.labels, ...q });
     return sendLabels(reply, r);
   });
 }
 
 type Query = (sql: string, params: unknown[]) => Promise<{ rows: any[] }>;
+type TenantRef = { id: number; slug: string; name: string };
 export type Labels = { pdf: Buffer; products: number; labels: number; filename: string };
 /**
- * Hoja de etiquetas de un negocio: todos sus productos activos con código (o una categoría / un origen), con el nombre
- * encima de cada código. La usan la consola (cualquier negocio) y el personal de cada negocio (solo el suyo, con RLS).
+ * Hoja de etiquetas de uno o varios negocios: todos sus productos activos con código (o una categoría / un origen), con el
+ * nombre encima de cada código; cada negocio empieza en página nueva. La usan la consola (cualquier negocio), el SuperAdmin
+ * desde Catálogo (cualquiera o todos) y el personal de cada negocio (solo el suyo, con RLS).
  */
-export async function buildLabels(query: Query, t: { id: number; slug: string; name: string }, q: z.infer<typeof labelsQuery>): Promise<Labels> {
-  const params: unknown[] = [t.id]; let where = '';
-  if (q.category) { params.push(slugify(q.category)); where += ` AND p.category = $${params.length}`; }
-  if (q.origin) { params.push(q.origin); where += ` AND p.origin = $${params.length}`; }
-  const rows = (await query(`SELECT p.name, p.sku, c.gtin FROM products p JOIN codes c ON c.product_id = p.id AND c.retired_at IS NULL
-    WHERE p.tenant_id = $1 AND p.active${where} ORDER BY p.category, coalesce(p.variant_of, p.sku), p.id`, params)).rows as { name: string; sku: string; gtin: string }[];
-  const items = rows.flatMap(r => Array<typeof r>(q.copies).fill(r));
-  if (!items.length) throw new HttpError(404, 'sin_productos', 'No hay productos activos con código para esas opciones');
-  if (items.length > MAX_LABELS) throw new HttpError(422, 'demasiadas_etiquetas', `Máximo ${MAX_LABELS} etiquetas por archivo (pediste ${items.length}); filtra por categoría o baja las copias`);
-  const pdf = labelSheet(items, { tenantName: t.name, paper: q.paper, qr: q.qr === '1', scale: q.scale / 100 });
-  return { pdf, products: rows.length, labels: items.length, filename: `etiquetas-${t.slug}-${new Date().toISOString().slice(0, 10)}.pdf` };
+export async function buildLabels(query: Query, tenants: TenantRef[], q: z.infer<typeof labelsQuery>): Promise<Labels> {
+  const sections: { title: string; items: { name: string; sku: string; gtin: string }[] }[] = [];
+  let products = 0;
+  for (const t of tenants) {
+    const params: unknown[] = [t.id]; let where = '';
+    if (q.category) { params.push(slugify(q.category)); where += ` AND p.category = $${params.length}`; }
+    if (q.origin) { params.push(q.origin); where += ` AND p.origin = $${params.length}`; }
+    const rows = (await query(`SELECT p.name, p.sku, c.gtin FROM products p JOIN codes c ON c.product_id = p.id AND c.retired_at IS NULL
+      WHERE p.tenant_id = $1 AND p.active${where} ORDER BY p.category, coalesce(p.variant_of, p.sku), p.id`, params)).rows as { name: string; sku: string; gtin: string }[];
+    products += rows.length;
+    sections.push({ title: t.name, items: rows.flatMap(r => Array<typeof r>(q.copies).fill(r)) });
+  }
+  const labels = sections.reduce((n, sec) => n + sec.items.length, 0);
+  if (!labels) throw new HttpError(404, 'sin_productos', 'No hay productos activos con código para esas opciones');
+  if (labels > MAX_LABELS) throw new HttpError(422, 'demasiadas_etiquetas', `Máximo ${MAX_LABELS} etiquetas por archivo (pediste ${labels}); filtra por categoría o baja las copias`);
+  const one = tenants.length === 1 ? tenants[0] : null;
+  const pdf = labelBook(sections, one?.name ?? 'Todos los negocios', { paper: q.paper, qr: q.qr === '1', scale: q.scale / 100 });
+  return { pdf, products, labels, filename: `etiquetas-${one?.slug ?? 'todos-los-negocios'}-${new Date().toISOString().slice(0, 10)}.pdf` };
 }
 export const sendLabels = (reply: FastifyReply, r: Labels) => reply.header('Content-Type', 'application/pdf').header('Cache-Control', 'no-store')
   .header('Content-Disposition', `attachment; filename="${r.filename}"`).send(r.pdf);
-

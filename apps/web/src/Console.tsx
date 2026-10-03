@@ -151,14 +151,14 @@ function Products() {
   };
   return (<>
     <h2>Productos y etiquetas</h2>
-    <p className="label">Lo que agregas aquí aparece en la página web del negocio y recibe su código EAN-13/QR al instante. Lo que viene del código de la web llega solo desde su repositorio; aquí solo se ajustan sus existencias.</p>
-    <SyncPanel onDone={reload} />
     <div className="formrow">
       <label className="label" htmlFor="pr-t">Página web / negocio</label>
       <select id="pr-t" value={tid} onChange={e => { setTenantId(Number(e.target.value)); setEdit(null); setNote(''); }}>{tenants.data?.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
     </div>
     {err && <p className="err">⚠ {err}</p>}
     {tenant && <LabelsPdf url={`/v1/admin/tenants/${tenant.id}/labels.pdf`} slug={tenant.slug} name={tenant.name} categories={cats} />}
+    <p className="label">Lo que agregas aquí aparece en la página web del negocio y recibe su código EAN-13/QR al instante. Lo que viene del código de la web llega solo desde su repositorio; aquí solo se ajustan sus existencias.</p>
+    <SyncPanel onDone={reload} />
     <h3>Agregar producto a {tenant?.name}</h3>
     <div className="fields">
       <label className="field"><span className="label">Nombre</span><input value={f.name} onChange={e => setF({ ...f, name: e.target.value, sku: f.skuTouched ? f.sku : skuFrom(e.target.value) })} /></label>

@@ -231,6 +231,48 @@ describe('hoja de etiquetas en PDF', () => {
     expect((await get(caja3, '?category=no-existe')).statusCode).toBe(404);
   });
 
+  it('el SuperAdmin elige desde Catálogo el negocio (o todos); la caja solo ve y descarga el suyo', async () => {
+    const get = (cookies: any, url: string) => app.inject({ method: 'GET', url, cookies, remoteAddress: ip() });
+    const texto = (b: Buffer) => { const raw = b.toString('latin1'); let out = '';
+      for (const m of raw.matchAll(/\/FlateDecode >>\nstream\n/g)) { const i = m.index! + m[0].length; out += zlib.inflateSync(b.subarray(i, raw.indexOf('\nendstream', i))).toString('latin1'); }
+      return out; };
+    const conCodigo = async (t: number) => (await ctx.owner.query('SELECT p.sku, p.category FROM products p JOIN codes c ON c.product_id=p.id AND c.retired_at IS NULL WHERE p.tenant_id=$1 AND p.active', [t])).rows as { sku: string; category: string }[];
+    // lista de negocios para el selector: la caja, solo el suyo (con sus categorías); el SuperAdmin, todos
+    const [p3, p5] = [await conCodigo(3), await conCodigo(5)];
+    const suyos = (await get(caja3, '/v1/labels/tenants')).json();
+    expect(suyos).toEqual([{ slug: 'tienda-0003', name: 'Café Origen', products: p3.length, categories: [...new Set(p3.map(p => p.category))].sort() }]);
+    const todos = (await get(admin, '/v1/labels/tenants')).json();
+    const nTenants = (await ctx.owner.query('SELECT count(*)::int AS n FROM tenants')).rows[0].n;
+    expect(todos).toHaveLength(nTenants);
+    expect(todos.find((t: any) => t.slug === 'tienda-0005')).toMatchObject({ products: p5.length });
+    // el SuperAdmin descarga el de cualquier negocio…
+    const de5 = await get(admin, '/v1/labels.pdf?tenant=tienda-0005');
+    expect(de5.statusCode).toBe(200);
+    expect(de5.headers['content-disposition']).toMatch(/filename="etiquetas-tienda-0005-/);
+    expect(p5.every(p => texto(de5.rawPayload as Buffer).includes(`(SKU ${p.sku})`))).toBe(true);
+    expect(pages(de5.rawPayload as Buffer)).toBe(Math.ceil(p5.length / 21));
+    // …o todos en un archivo: cada negocio empieza en página nueva, con su nombre arriba
+    const all = await get(admin, '/v1/labels.pdf?tenant=*');
+    expect(all.statusCode).toBe(200);
+    expect(all.headers['content-disposition']).toMatch(/filename="etiquetas-todos-los-negocios-/);
+    const porNegocio = (await ctx.owner.query(`SELECT t.name, count(*)::int AS n FROM products p JOIN codes c ON c.product_id=p.id AND c.retired_at IS NULL
+      JOIN tenants t ON t.id=p.tenant_id WHERE p.active GROUP BY t.name`)).rows as { name: string; n: number }[];
+    expect(pages(all.rawPayload as Buffer)).toBe(porNegocio.reduce((s, t) => s + Math.ceil(t.n / 21), 0));
+    const txt = texto(all.rawPayload as Buffer);
+    expect([...p3, ...p5].every(p => txt.includes(`(SKU ${p.sku})`))).toBe(true);
+    const lit = (v: string) => v.replace(/[\u00a0-\u00ff]/g, ch => '\\' + ch.charCodeAt(0).toString(8).padStart(3, '0')); // así escribe el PDF lo no ASCII
+    expect(porNegocio.every(t => txt.includes(`(${lit(`${t.name} · ${t.n} etiqueta`)}`))).toBe(true);
+    const audit = (await ctx.owner.query("SELECT tenant_id, after FROM audit_log WHERE action='labels.pdf' ORDER BY id DESC LIMIT 1")).rows[0];
+    expect(audit).toMatchObject({ tenant_id: null, after: { tenant: '*', labels: porNegocio.reduce((s, t) => s + t.n, 0) } });
+    expect((await get(admin, '/v1/labels.pdf?tenant=no-existe')).statusCode).toBe(404);
+    expect((await get(admin, '/v1/labels.pdf?tenant=../x')).statusCode).toBe(422);
+    // la caja: el suyo sí (también nombrándolo), el de otro negocio o "todos" no
+    expect((await get(caja3, '/v1/labels.pdf?tenant=tienda-0003')).statusCode).toBe(200);
+    expect((await get(caja3, '/v1/labels.pdf?tenant=tienda-0005')).json()).toMatchObject({ error: 'solo_tu_negocio' });
+    expect((await get(caja3, '/v1/labels.pdf?tenant=*')).statusCode).toBe(403);
+    expect((await get({}, '/v1/labels/tenants')).statusCode).toBe(401);
+  });
+
   it('el texto y los códigos del PDF se leen (pdftotext + ZXing, si están instalados)', async () => {
     const has = (bin: string) => { try { execFileSync(bin, ['-v'], { stdio: 'ignore' }); return true; } catch { return false; } };
     if (!has('pdftotext') || !has('pdftoppm')) return; // sin poppler en esta máquina: se valida solo la estructura

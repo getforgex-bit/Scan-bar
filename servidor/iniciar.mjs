@@ -1,6 +1,8 @@
-// npm run servidor: revisa Node, instala lo necesario la primera vez (o si la instalación quedó a medias) y abre el panel.
+// npm run servidor: revisa Node, instala lo necesario la primera vez (o si la instalación quedó a medias, o si al actualizar
+// Scan-bar cambió package-lock.json) y abre el panel.
 // JavaScript simple, sin dependencias: corre antes de que exista node_modules.
 import { spawnSync } from 'node:child_process';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -15,15 +17,21 @@ if (mayor < 22 || (mayor === 22 && menor < 12)) {
 // Lo que el panel carga al arrancar; si falta algo, la instalación no está completa.
 const NECESARIOS = ['tsx', 'embedded-postgres', 'pg', 'fastify', 'argon2', 'vite'];
 const instalado = () => NECESARIOS.every(m => fs.existsSync(path.join(ROOT, 'node_modules', m, 'package.json')));
-if (!instalado()) {
-  console.log('Instalando lo necesario por única vez (tarda unos minutos)…');
+// Marca con la huella de package-lock.json de la última instalación: si cambia (Scan-bar actualizado), se vuelve a instalar.
+const MARCA = path.join(ROOT, 'node_modules', '.scanbar-lock');
+const huellaLock = () => crypto.createHash('sha256').update(fs.readFileSync(path.join(ROOT, 'package-lock.json'))).digest('hex');
+const completo = instalado();
+if (!completo || !fs.existsSync(MARCA) || fs.readFileSync(MARCA, 'utf8') !== huellaLock()) {
+  console.log(completo ? 'Revisando que las dependencias estén al día…' : 'Instalando lo necesario por única vez (tarda unos minutos)…');
   const args = ['install', '--no-audit', '--no-fund'];
   // Con npm run, npm_execpath apunta a npm: se llama con este mismo Node, sin shell (igual en Windows, macOS y Linux).
   const npm = process.env.npm_execpath;
   const r = npm && /\.[cm]?js$/.test(npm)
     ? spawnSync(process.execPath, [npm, ...args], { cwd: ROOT, stdio: 'inherit' })
     : spawnSync(`npm ${args.join(' ')}`, { cwd: ROOT, stdio: 'inherit', shell: true });
-  if (r.status !== 0 || !instalado()) {
+  if (r.status === 0 && instalado()) fs.writeFileSync(MARCA, huellaLock());
+  else if (completo && instalado()) console.warn('No se pudieron actualizar las dependencias (¿sin internet?); se sigue con las que ya estaban.');
+  else {
     console.error('No se pudo instalar lo necesario. Revisa tu conexión a internet y vuelve a intentarlo (o ejecuta npm install y mira el error).');
     process.exit(1);
   }

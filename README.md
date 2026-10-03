@@ -35,7 +35,8 @@ Contraseñas de la semilla en `.dev-credentials.txt` (o `SEED_ADMIN_PASSWORD` / 
 **Agregar un producto a una web**: *Administración → Productos y etiquetas* → elige la web → nombre, categoría (la sección de la web), precio y,
 si aplica, variantes (`CH, M, G` o `Chico=45, Grande=55`): cada variante recibe su GTIN al instante y la web la muestra en su siguiente carga.
 **Etiquetas**: en la misma sección, *Descargar PDF* (carta o A4, QR opcional, copias): nombre encima de cada código, con guías de corte.
-**Cada negocio descarga su propio PDF** desde su cuenta (`caja.<negocio>@scanbar.mx`): *Catálogo y etiquetas → Descargar PDF*, con todos sus códigos y solo los suyos.
+**Cada negocio descarga su propio PDF** desde su cuenta (`caja.<negocio>@scanbar.mx`): arriba de *Catálogo y etiquetas → Descargar PDF*, con todos sus códigos y solo los suyos.
+El **SuperAdmin**, en la misma pestaña, elige el negocio o *Todos los negocios* (un archivo; cada negocio empieza en página nueva).
 Negocios de ejemplo con configurador (motor de reglas, sigue disponible por API): `tienda-0002` (PC a medida) y `tienda-0003` (bebidas).
 
 La cámara exige HTTPS salvo en `localhost`. Para probar desde un teléfono, expón la app con un túnel HTTPS.

@@ -99,9 +99,13 @@ async function encender() {
     fase('Revisando lo necesario');
     const [mayor, menor] = process.versions.node.split('.').map(Number);
     if (mayor < 22 || (mayor === 22 && menor < 12)) throw new Error(`Se necesita Node.js 22.12 o superior (tienes ${process.versions.node}).`);
-    if (!fs.existsSync(path.join(ROOT, 'apps/web/dist/index.html'))) {
-      fase('Preparando la app (solo la primera vez, ~1 minuto)');
+    // Se compila la primera vez y cada vez que cambia su código (al actualizar Scan-bar); si no, se vería la versión anterior.
+    const huella = huellaWeb();
+    const huellaPrevia = fs.existsSync(HUELLA_WEB) ? fs.readFileSync(HUELLA_WEB, 'utf8') : '';
+    if (!fs.existsSync(path.join(ROOT, 'apps/web/dist/index.html')) || huella !== huellaPrevia) {
+      fase(huellaPrevia ? 'Preparando la versión nueva de la app (~1 minuto)' : 'Preparando la app (solo la primera vez, ~1 minuto)');
       await correr(process.execPath, [path.join(ROOT, 'node_modules/vite/bin/vite.js'), 'build', 'apps/web', '--config', 'apps/web/vite.config.ts']);
+      fs.writeFileSync(HUELLA_WEB, huella);
     }
     fase('Iniciando la base de datos');
     await iniciarPostgres();
@@ -129,6 +133,20 @@ async function encender() {
     await apagar(true);
     estado = 'error';
   }
+}
+
+/** Huella del código de la PWA (y de las dependencias): cambia cuando se actualiza Scan-bar. */
+const HUELLA_WEB = path.join(DATA, 'pwa-huella.txt');
+function huellaWeb(): string {
+  const h = crypto.createHash('sha256');
+  const recorrer = (rel: string) => {
+    const abs = path.join(ROOT, rel);
+    if (!fs.existsSync(abs)) return;
+    if (fs.statSync(abs).isDirectory()) { for (const n of fs.readdirSync(abs).sort()) if (n !== 'dist' && n !== 'node_modules') recorrer(path.join(rel, n)); return; }
+    h.update(rel.split(path.sep).join('/')); h.update(fs.readFileSync(abs));
+  };
+  for (const rel of ['apps/web', 'packages/codes/src', 'package-lock.json']) recorrer(rel);
+  return h.digest('hex');
 }
 
 /** Errores de Windows con solución conocida, en palabras claras (el detalle técnico queda en el registro). */

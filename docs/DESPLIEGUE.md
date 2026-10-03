@@ -64,6 +64,15 @@ La pestaña **Datos** muestra: estado y si responde desde internet, productos y 
 tamaño de la base, última sincronización de cada web, las cuentas con sus contraseñas, y el **registro en vivo** (filtrable, con copia), que
 también se guarda en `.servidor/registro.log`.
 
+### Actualizar Scan-bar (cuando haya una versión nueva)
+
+1. En el panel, **Apagar**, y cierra la ventana negra.
+2. Descarga el ZIP nuevo (*Code → Download ZIP* en GitHub) y extráelo **en el mismo lugar que la vez anterior**, eligiendo
+   **Reemplazar los archivos** (Windows propone la misma carpeta si el ZIP se llama igual). Con Git: `git pull`.
+   Tus datos (`.servidor/`: base de datos, llave y contraseñas) no están en el ZIP y se conservan.
+3. Abre el panel otra vez y pulsa **Encender**. Solo, instala lo que haya cambiado y prepara la versión nueva de la app
+   (*Preparando la versión nueva de la app*, ~1 minuto). En el navegador, la app se actualiza sola al abrirla.
+
 ### Cuentas
 
 El panel genera las contraseñas la primera vez y las muestra en **Datos → Cuentas**:
