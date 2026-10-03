@@ -13,11 +13,21 @@ export const POS_PW = 'Caja-prueba-12345';
 process.env.TOTP_ENC_KEY = crypto.randomBytes(32).toString('base64');
 const ROLE_PW = { app_rw: crypto.randomBytes(18).toString('base64url'), admin_ro: crypto.randomBytes(18).toString('base64url'), admin_rw: crypto.randomBytes(18).toString('base64url') };
 
+/**
+ * TEST_OWNER=restringido: el dueño de la base no es superusuario ni tiene BYPASSRLS, solo CREATEDB y CREATEROLE,
+ * como el dueño de un Postgres administrado (Neon, Supabase). Así se prueba que todo funciona fuera de un Postgres propio.
+ */
+const restricted = process.env.TEST_OWNER === 'restringido';
 export async function freshDb(seed = true) {
   const name = 't_' + crypto.randomBytes(5).toString('hex');
   const root = new pg.Client({ connectionString: `postgres://postgres:postgres@localhost:${port()}/postgres` });
-  await root.connect(); await root.query(`CREATE DATABASE ${name}`); await root.end();
-  const ownerUrl = `postgres://postgres:postgres@localhost:${port()}/${name}`;
+  await root.connect();
+  if (restricted) {
+    await root.query(`DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'dueno') THEN CREATE ROLE dueno LOGIN PASSWORD 'dueno' CREATEDB CREATEROLE NOSUPERUSER NOBYPASSRLS; END IF; END $$`);
+    await root.query(`CREATE DATABASE ${name} OWNER dueno`);
+  } else await root.query(`CREATE DATABASE ${name}`);
+  await root.end();
+  const ownerUrl = restricted ? `postgres://dueno:dueno@localhost:${port()}/${name}` : `postgres://postgres:postgres@localhost:${port()}/${name}`;
   await migrate(ownerUrl, ROLE_PW);
   if (seed) execFileSync('npx', ['tsx', 'db/seed.ts'], { env: { ...process.env, DATABASE_URL: ownerUrl, SEED_ADMIN_PASSWORD: ADMIN_PW, SEED_POS_PASSWORD: POS_PW }, shell: true, stdio: 'pipe' });
   const urls = { ownerUrl, appUrl: roleUrl(ownerUrl, 'app_rw', ROLE_PW.app_rw), adminUrl: roleUrl(ownerUrl, 'admin_ro', ROLE_PW.admin_ro), adminRwUrl: roleUrl(ownerUrl, 'admin_rw', ROLE_PW.admin_rw) };

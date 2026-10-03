@@ -18,10 +18,10 @@ import { registerWeb } from './web';
 import { issueProductCode } from './catalog';
 import { newSecret, verifyTotp, otpauthUri, sha256 } from './totp';
 import { securityHeaders, rateLimiter, isLocalHost, encryptSecret, decryptSecret, passwordProblem, PAGE_CSP } from './security';
-import { STAFF, ADMIN_UNLOCK_MS, type Role, type Session } from './session';
+import { STAFF, ADMIN_UNLOCK_MS, SessionStore, type Role, type Session } from './session';
 export { HttpError, bomHash, issueProductCode };
 
-declare module 'fastify' { interface FastifyRequest { session?: Session } }
+declare module 'fastify' { interface FastifyRequest { session?: Session; sessionId?: string } }
 
 const esc = (s: unknown) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 const money = (c: number) => `$${(c / 100).toLocaleString('es-MX', { minimumFractionDigits: 2 })}`;
@@ -59,7 +59,7 @@ export async function buildApp(opts: AppOpts = {}): Promise<FastifyInstance & { 
   await app.register(cookie);
   app.addContentTypeParser('text/csv', { parseAs: 'string' }, (_r, body, done) => done(null, body));
 
-  const sessions = new Map<string, Session>();
+  const sessions = new SessionStore(db.app);
   const fails = new Map<string, { n: number; first: number; lockedUntil: number }>();
   const lastStep = new Map<number, number>();
   const limit = rateLimiter();
@@ -69,9 +69,11 @@ export async function buildApp(opts: AppOpts = {}): Promise<FastifyInstance & { 
   app.addHook('onRequest', async (req, reply) => {
     reply.header('X-Request-Id', req.id);
     securityHeaders(req, reply);
+    // En Cloudflare (workers.dev) el host público se aprende de la primera petición: lo usan los QR y las URL de las webs.
+    if (!process.env.RESOLVER_HOST && /^[a-z0-9-]+\.[a-z0-9-]+\.workers\.dev$/i.test(req.hostname)) process.env.RESOLVER_HOST = req.hostname;
     const sid = req.cookies?.sid;
-    const s = sid ? sessions.get(sid) : undefined;
-    if (s && s.exp > Date.now()) { req.session = s; if (s.role === 'superadmin') s.exp = Date.now() + 2 * 3600_000; } // 2 h de inactividad
+    const s = sid && sid.length <= 100 ? await sessions.get(sid) : undefined;
+    if (s) { req.session = s; req.sessionId = sid; if (s.role === 'superadmin') s.exp = Date.now() + 2 * 3600_000; } // 2 h de inactividad
     const apiKey = req.headers['x-api-key'];
     if (!req.session && typeof apiKey === 'string') {
       const hash = sha256(apiKey);
@@ -99,6 +101,8 @@ export async function buildApp(opts: AppOpts = {}): Promise<FastifyInstance & { 
     if (logBuf.length >= 50) await flushLog();
   });
   (app as any).flushLogs = flushLog;
+  // Bloqueo, desbloqueo, segundo factor y vencimiento deslizante se guardan en la base (ver SessionStore.save).
+  app.addHook('onResponse', async req => { if (req.session && req.sessionId) await sessions.save(req.sessionId, req.session).catch(() => {}); });
   app.addHook('onClose', async () => { if (logTimer) clearInterval(logTimer); await flushLog(); if (!opts.db) await db.close(); });
 
   app.setErrorHandler((err: any, req, reply) => {
@@ -136,10 +140,9 @@ export async function buildApp(opts: AppOpts = {}): Promise<FastifyInstance & { 
     f.n++; if (f.n >= 5) f.lockedUntil = Date.now() + 15 * 60_000;
     fails.set(key, f);
   };
-  const startSession = (req: FastifyRequest, reply: any, s: Omit<Session, 'exp'>) => {
-    const sid = crypto.randomBytes(32).toString('base64url'); // rotación: siempre un id nuevo
+  const startSession = async (req: FastifyRequest, reply: any, s: Omit<Session, 'exp'>) => {
     const hours = s.role === 'superadmin' ? 2 : 12;
-    sessions.set(sid, { ...s, exp: Date.now() + hours * 3600_000 });
+    const sid = await sessions.create(s, hours * 3600_000); // rotación: siempre un id nuevo
     // Secure siempre, salvo en localhost (desarrollo sin TLS).
     reply.setCookie('sid', sid, { httpOnly: true, secure: !isLocalHost(req.hostname), sameSite: 'lax', path: '/', maxAge: hours * 3600 });
   };
@@ -157,7 +160,7 @@ export async function buildApp(opts: AppOpts = {}): Promise<FastifyInstance & { 
     const hash = await argon2.hash(b.password, { type: argon2.argon2id });
     const id = (await publicQuery(db, 'SELECT register_user($1,$2) AS id', [email, hash])).rows[0].id;
     if (!id) throw new HttpError(409, 'ya_registrado', 'Ese correo ya tiene una cuenta; inicia sesión');
-    startSession(req, reply, { userId: Number(id), tenantId: 0, role: 'cliente', email });
+    await startSession(req, reply, { userId: Number(id), tenantId: 0, role: 'cliente', email });
     return reply.status(201).send({ role: 'cliente' });
   });
 
@@ -189,11 +192,11 @@ export async function buildApp(opts: AppOpts = {}): Promise<FastifyInstance & { 
       }
     }
     fails.delete(key);
-    startSession(req, reply, { userId: Number(m.id), tenantId: m.tenant_id ?? 0, role, email, totp: totpOk, adminUntil: role === 'superadmin' ? Date.now() + ADMIN_UNLOCK_MS : undefined });
+    await startSession(req, reply, { userId: Number(m.id), tenantId: m.tenant_id ?? 0, role, email, totp: totpOk, adminUntil: role === 'superadmin' ? Date.now() + ADMIN_UNLOCK_MS : undefined });
     return { role, tenantId: m.tenant_id ?? null, totpEnabled: totpOk };
   });
   app.post('/v1/auth/logout', async (req, reply) => {
-    if (req.cookies?.sid) sessions.delete(req.cookies.sid);
+    if (req.cookies?.sid) await sessions.destroy(req.cookies.sid);
     reply.clearCookie('sid', { path: '/' });
     return { ok: true };
   });

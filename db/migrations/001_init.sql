@@ -121,7 +121,8 @@ $$;
 -- Roles de base
 DO $r$ BEGIN
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='app_rw') THEN CREATE ROLE app_rw NOLOGIN; END IF; -- la contraseña la fija scripts/migrate.ts desde variables de entorno
-  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='admin_ro') THEN CREATE ROLE admin_ro NOLOGIN BYPASSRLS; END IF;
+  -- Sin BYPASSRLS (un Postgres administrado como Neon no deja otorgarlo): ve todos los tenants por la política admin_all (007).
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='admin_ro') THEN CREATE ROLE admin_ro NOLOGIN; END IF;
 END $r$;
 GRANT USAGE ON SCHEMA public TO app_rw, admin_ro;
 GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO app_rw;

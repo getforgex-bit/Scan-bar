@@ -21,9 +21,9 @@ CREATE INDEX http_log_req ON http_log (request_id);
 CREATE INDEX http_log_created ON http_log (created_at);
 CREATE INDEX scan_events_created ON scan_events (created_at);
 
--- Rol de escritura de la consola (solo tablas de administración; BYPASSRLS porque opera entre tenants)
+-- Rol de escritura de la consola (solo tablas de administración; opera entre tenants por la política admin_all de 007)
 DO $r$ BEGIN
-  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='admin_rw') THEN CREATE ROLE admin_rw NOLOGIN BYPASSRLS; END IF;
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='admin_rw') THEN CREATE ROLE admin_rw NOLOGIN; END IF;
 END $r$;
 GRANT USAGE ON SCHEMA public TO admin_rw;
 GRANT SELECT, INSERT, UPDATE ON tenants, users, memberships, api_keys, code_counters, recovery_codes TO admin_rw;

@@ -10,6 +10,7 @@ import { sha256 } from './totp';
 import { parseDefinition } from './builds';
 import { ADMIN_UNLOCK_MS, type Session } from './session';
 import { registerCatalogAdmin } from './catalog';
+import { syncNow, syncState } from './sync';
 
 export type { Session };
 
@@ -186,6 +187,14 @@ export function registerAdmin(app: FastifyInstance, db: Db, opts: { timers: bool
   // ----- productos de todas las webs y hoja de etiquetas en PDF -----
   registerCatalogAdmin(app, db, { admin, audit });
 
+  // ----- catálogo de las webs desde GitHub (también corre solo; esto lo fuerza) -----
+  app.get('/v1/admin/sync', { preHandler: admin }, async () => syncState);
+  app.post('/v1/admin/sync', { preHandler: admin }, async req => {
+    const last = await syncNow(db.adminRw, { force: true });
+    await audit(S(req)!, null, 'catalog.sync', null, last);
+    return { ...syncState, last };
+  });
+
   // ----- configuradores: las reglas son datos y se editan sin desplegar -----
   const cfgCols = 'c.id::int AS id, c.tenant_id, t.slug AS tenant_slug, t.name AS tenant_name, c.slug, c.name, c.description, c.definition, c.active';
   app.get('/v1/admin/configurators', { preHandler: admin }, async () =>
@@ -294,6 +303,7 @@ export function registerAdmin(app: FastifyInstance, db: Db, opts: { timers: bool
     every(60_000, async () => { await db.app.query('SELECT refresh_metrics()'); await db.app.query('SELECT evaluate_alerts()'); });
     every(6 * 3600_000, async () => { for (const t of (await db.admin.query('SELECT id FROM tenants')).rows) await checkLink(db, t.id); });
     every(24 * 3600_000, () => db.app.query("DELETE FROM http_log WHERE created_at < now() - interval '14 days'"));
+    every(3600_000, () => db.app.query('DELETE FROM sessions WHERE expires_at < now()'));
   }
   app.addHook('onClose', async () => { timers.forEach(clearInterval); await hub.stop(); });
 }

@@ -90,14 +90,19 @@ export function registerWeb(app: FastifyInstance, db: Db, h: { limit: Limit }) {
     const domains = (await withTenant(db, t.id, tx => tx.query('SELECT allowed_domains FROM tenants WHERE id=$1', [t.id]))).rows[0]?.allowed_domains as string[] ?? [];
     return { id: Number(t.id), slug: t.slug as string, name: t.name as string, domains };
   };
-  /** CORS por negocio: sus dominios registrados (los mismos a los que redirige el resolver) y localhost para pruebas. Nunca con credenciales. */
+  /** Webs de la misma cuenta de Cloudflare que Scan-bar (mismo subdominio *.cuenta.workers.dev): solo esa cuenta puede publicar ahí. */
+  const sameAccount = (host: string, own: string) => {
+    const acct = (h: string) => /\.([a-z0-9-]+\.workers\.dev)$/i.exec(h)?.[1]?.toLowerCase();
+    return !!acct(host) && acct(host) === acct(own);
+  };
+  /** CORS por negocio: sus dominios registrados (los mismos a los que redirige el resolver), la misma cuenta de workers.dev y localhost para pruebas. Nunca con credenciales. */
   const allowOrigin = (req: FastifyRequest, reply: FastifyReply, domains: string[]): boolean => {
     const origin = req.headers.origin;
     if (typeof origin !== 'string') return true; // misma origen o fuera de un navegador
     reply.header('Vary', 'Origin');
     let ok = false;
     if (origin === 'null') ok = !isProd(); // página abierta como archivo (file://) mientras se desarrolla
-    else { try { const host = new URL(origin).hostname; ok = domains.includes(host) || isLocalHost(host); } catch { ok = false; } }
+    else { try { const host = new URL(origin).hostname; ok = domains.includes(host) || isLocalHost(host) || sameAccount(host, req.hostname); } catch { ok = false; } }
     if (ok) reply.header('Access-Control-Allow-Origin', origin);
     return ok;
   };
