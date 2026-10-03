@@ -44,6 +44,7 @@ await doc('POST /v1/auth/register', 'POST', '/v1/auth/register', { body: { email
 const list = await doc('GET /v1/products', 'GET', '/v1/products', { cookie: pos.cookie });
 const cpu = list.find((p: any) => p.sku === 'CPU-A5-7600');
 await doc('GET /v1/scan/:gtin', 'GET', `/v1/scan/${cpu.gtin}`, { cookie: pos.cookie, note: 'Solo GTIN del tenant de la sesión (404 si es de otro).' });
+await doc('GET /v1/labels.pdf', 'GET', '/v1/labels.pdf?paper=letter&qr=0&copies=1', { cookie: pos.cookie, note: 'Cada negocio descarga desde su cuenta (caja o personal) la hoja de etiquetas con todos sus códigos: siempre el negocio de la sesión (RLS), nunca otro. Mismos parámetros que la versión de la consola; 404 si no hay productos para esas opciones; 10 descargas por minuto por cuenta.' });
 await doc('GET /01/:gtin14 (resolver público)', 'GET', `/01/0${cpu.gtin}`, { note: '302 a la plantilla del tenant (host validado contra `allowed_domains`); ficha de respaldo HTML si el enlace está `down`; 404 propio si no existe.' });
 await doc('GET /v1/codes/:gtin.svg', 'GET', `/v1/codes/${cpu.gtin}.svg?kind=ean13`, { note: '`kind=ean13|qr`; `Cache-Control: public, max-age=31536000, immutable`; 422 si el GTIN es inválido.' });
 await doc('GET /v1/allowed-domains', 'GET', '/v1/allowed-domains');

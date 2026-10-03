@@ -2,6 +2,7 @@
 // en la web, CORS por dominio del negocio y hoja de etiquetas en PDF.
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import fs from 'node:fs';
+import zlib from 'node:zlib';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -91,7 +92,7 @@ describe('agregar productos a una web desde Scan-bar', () => {
     expect((await call('PATCH', `/v1/admin/products/${id}`, admin, { sku: 'NO-SE-CAMBIA' })).statusCode).toBe(422); // el SKU es la llave: no se edita
   });
 
-  it('ni la caja ni un cliente registrado administran productos ni descargan etiquetas', async () => {
+  it('ni la caja ni un cliente registrado administran productos ni descargan etiquetas de otro negocio desde la consola', async () => {
     const cliente = (await call('POST', '/v1/auth/register', {}, { email: 'cliente.web@ejemplo.mx', password: 'una-clave-bastante-larga' })).cookies.find((c: any) => c.name === 'sid');
     for (const c of [caja3, { sid: cliente.value }]) {
       expect((await call('GET', '/v1/admin/products?tenantId=3', c)).statusCode).toBe(403);
@@ -197,6 +198,39 @@ describe('hoja de etiquetas en PDF', () => {
     expect((await pdf('?copies=51')).statusCode).toBe(422);
     expect((await pdf('?paper=oficio')).statusCode).toBe(422);
   });
+  it('cada negocio descarga desde su cuenta el PDF con todos sus códigos, y solo los suyos', async () => {
+    const get = (cookies: any, q = '') => app.inject({ method: 'GET', url: `/v1/labels.pdf${q}`, cookies, remoteAddress: ip() });
+    const activos = async (t: number) => (await ctx.owner.query('SELECT count(*)::int AS n FROM products p JOIN codes c ON c.product_id=p.id AND c.retired_at IS NULL WHERE p.tenant_id=$1 AND p.active', [t])).rows[0].n;
+    const propia = await get(caja3);
+    expect(propia.statusCode).toBe(200); expect(propia.headers['content-type']).toBe('application/pdf');
+    expect(propia.headers['content-disposition']).toMatch(/filename="etiquetas-tienda-0003-/);
+    expect(pages(propia.rawPayload as Buffer)).toBe(Math.ceil(await activos(3) / 21));
+    expect(pages((await get(caja3, '?copies=2&qr=1&paper=a4')).rawPayload as Buffer)).toBe(Math.ceil(2 * await activos(3) / 14)); // QR: 2 columnas × 7 filas
+    const audit = (await ctx.owner.query("SELECT tenant_id, after FROM audit_log WHERE action='labels.pdf' ORDER BY id DESC LIMIT 1")).rows[0];
+    expect(audit).toMatchObject({ tenant_id: 3, after: { labels: 2 * await activos(3), copies: 2 } });
+    // otro negocio: su propio archivo, con sus propios códigos (RLS), nunca los de la tienda 3
+    const caja5 = (await login(app, 'caja5@ejemplo.mx', POS_PW, ip())).cookies;
+    const otra = await get(caja5);
+    expect(otra.headers['content-disposition']).toMatch(/filename="etiquetas-tienda-0005-/);
+    // el texto del PDF va comprimido: se descomprime y se buscan los SKU impresos bajo cada nombre
+    const texto = (b: Buffer) => { const raw = b.toString('latin1'); let out = '';
+      for (const m of raw.matchAll(/\/FlateDecode >>\nstream\n/g)) { const i = m.index! + m[0].length; out += zlib.inflateSync(b.subarray(i, raw.indexOf('\nendstream', i))).toString('latin1'); }
+      return out; };
+    const skus = async (t: number) => (await ctx.owner.query('SELECT p.sku FROM products p JOIN codes c ON c.product_id=p.id AND c.retired_at IS NULL WHERE p.tenant_id=$1 AND p.active', [t])).rows.map((r: any) => r.sku as string);
+    const [sku3, sku5] = [await skus(3), await skus(5)];
+    const solo3 = sku3.filter(k => !sku5.includes(k));
+    expect(solo3.length).toBeGreaterThan(0);
+    expect(sku3.every(k => texto(propia.rawPayload as Buffer).includes(`(SKU ${k})`))).toBe(true);
+    expect(sku5.every(k => texto(otra.rawPayload as Buffer).includes(`(SKU ${k})`))).toBe(true);
+    expect(solo3.some(k => texto(otra.rawPayload as Buffer).includes(`(SKU ${k})`))).toBe(false);
+    expect(pages(otra.rawPayload as Buffer)).toBe(Math.ceil(await activos(5) / 21));
+    // sin cuenta de personal, no
+    expect((await get({})).statusCode).toBe(401);
+    const cliente = (await call('POST', '/v1/auth/register', {}, { email: 'cliente.etiquetas@ejemplo.mx', password: 'una-clave-bastante-larga' })).cookies.find((c: any) => c.name === 'sid');
+    expect((await get({ sid: cliente.value })).statusCode).toBe(403);
+    expect((await get(caja3, '?category=no-existe')).statusCode).toBe(404);
+  });
+
   it('el texto y los códigos del PDF se leen (pdftotext + ZXing, si están instalados)', async () => {
     const has = (bin: string) => { try { execFileSync(bin, ['-v'], { stdio: 'ignore' }); return true; } catch { return false; } };
     if (!has('pdftotext') || !has('pdftoppm')) return; // sin poppler en esta máquina: se valida solo la estructura

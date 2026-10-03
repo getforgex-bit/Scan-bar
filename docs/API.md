@@ -317,6 +317,16 @@ Respuesta **200**:
 (PDF de 76898 bytes, 3 página(s); attachment; filename="etiquetas-yokrem-2026-10-03.pdf")
 ```
 
+## GET /v1/labels.pdf
+
+Cada negocio descarga desde su cuenta (caja o personal) la hoja de etiquetas con todos sus códigos: siempre el negocio de la sesión (RLS), nunca otro. Mismos parámetros que la versión de la consola; 404 si no hay productos para esas opciones; 10 descargas por minuto por cuenta.
+
+```bash
+curl -X GET -H 'cookie: sid=<sesión>' -H 'X-Requested-With: x' 'http://localhost:3000/v1/labels.pdf?paper=letter&qr=0&copies=1'
+```
+
+Respuesta **200**: PDF (`attachment; filename="etiquetas-<negocio>-<fecha>.pdf"`).
+
 ## GET /v1/admin/db/:vista
 
 Vistas: v_products, v_codes, v_builds, v_sales, v_scan_events. Columna fuera de la lista → 422.

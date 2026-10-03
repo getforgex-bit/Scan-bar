@@ -19,6 +19,7 @@ Un solo sistema: las seis páginas web de los negocios (YOKREM, Motz Café, Dulc
   (código = catálogo)   │                                                  ├─► codes (GTIN-13 único) ─► /01/:gtin14 │
   Administración ─────► │ POST /v1/admin/products ─► products (origin='scanbar')                    resolver      │
                         │ GET  /v1/admin/tenants/:id/labels.pdf ─► hoja de etiquetas                              │
+                        │ GET  /v1/labels.pdf (cuenta del negocio) ─► su propia hoja                               │
                         │ GET  /v1/public/t/:slug/catalog ◄────────── web: pinta lo agregado desde Scan-bar        │
                         │ POST /v1/public/t/:slug/configurations ◄─── web: bebida / ensamble → builds + GTIN       │
                         │ PWA: Escáner (Navegación/Caja) cobra cualquier código de las seis webs                   │

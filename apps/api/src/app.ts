@@ -15,7 +15,7 @@ import { HttpError } from './errors';
 import { registerAdmin, redactHeaders, redactQuery } from './admin';
 import { registerBuilds, bomHash } from './builds';
 import { registerWeb } from './web';
-import { issueProductCode } from './catalog';
+import { issueProductCode, buildLabels, sendLabels, labelsQuery } from './catalog';
 import { isReservedEmail } from './bootstrap';
 import { newSecret, verifyTotp, otpauthUri, sha256 } from './totp';
 import { securityHeaders, rateLimiter, isLocalHost, encryptSecret, decryptSecret, passwordProblem, PAGE_CSP } from './security';
@@ -273,6 +273,21 @@ export async function buildApp(opts: AppOpts = {}): Promise<FastifyInstance & { 
     withTenant(db, S(req).tenantId, async tx => (await tx.query(
       `SELECT p.id::int AS id, p.sku, p.name, p.category, p.price_cents AS "priceCents", p.stock, p.attrs, p.active, c.gtin
          FROM products p LEFT JOIN codes c ON c.product_id=p.id WHERE p.active ORDER BY p.category, p.name`)).rows));
+
+  // ---- etiquetas del propio negocio: cada negocio (su caja / su personal) descarga el PDF con todos sus códigos ----
+  app.get('/v1/labels.pdf', { preHandler: auth('superadmin', 'operador_pos') }, async (req, reply) => {
+    const s = S(req);
+    limit(reply, `labels:${s.userId}`, 10, 60_000); // generar el PDF cuesta CPU
+    const q = labelsQuery.parse(req.query);
+    const r = await withTenant(db, s.tenantId, async tx => {
+      const t = (await tx.query('SELECT id::int AS id, slug, name FROM tenants WHERE id=$1', [s.tenantId])).rows[0];
+      if (!t) throw new HttpError(404, 'negocio_no_existe', 'Esta cuenta no tiene negocio');
+      return buildLabels((sql, params) => tx.query(sql, params), t, q);
+    });
+    await db.adminRw.query('INSERT INTO audit_log (tenant_id,user_id,action,after) VALUES ($1,$2,$3,$4)',
+      [s.tenantId, s.userId, 'labels.pdf', JSON.stringify({ products: r.products, labels: r.labels, ...q })]);
+    return sendLabels(reply, r);
+  });
 
   app.post('/v1/products', { preHandler: adminOnly }, async (req, reply) => {
     const b = productIn.parse(req.body); const s = S(req);

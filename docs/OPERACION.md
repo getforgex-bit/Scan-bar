@@ -26,7 +26,7 @@ npm run build && npm start
 ## Productos de las webs y etiquetas
 - **Catálogo del código de cada web**: el servidor lo sincroniza solo (al arrancar y cada `SYNC_INTERVAL_MIN`, solo los repos cuyo commit cambió; *Productos y etiquetas → Sincronizar ahora* lo fuerza y muestra el resultado por web). A mano: `npm run sync:repos` (clona las 6 webs de GitHub; `-- --local=..` las lee de una carpeta; `-- --dry` solo muestra). Idempotente: crea lo nuevo con su GTIN, actualiza lo cambiado y retira lo que ya no está. No toca lo agregado desde la consola.
 - **Agregar un producto a una web**: *Administración → Productos y etiquetas* → web → datos y variantes. Retirar/reactivar desde la misma tabla (el código nunca se borra).
-- **Hoja de etiquetas**: misma sección → *Descargar PDF*. Imprimir con "tamaño real" (100 %), recortar por las guías, pegar. Para frascos o piezas chicas, código al 80 %.
+- **Hoja de etiquetas**: misma sección → *Descargar PDF* (cualquier negocio). Cada negocio también la descarga desde su propia cuenta de caja: *Catálogo y etiquetas → Descargar PDF* (solo sus códigos; queda en `audit_log`). Imprimir con "tamaño real" (100 %), recortar por las guías, pegar. Para frascos o piezas chicas, código al 80 %.
 - **Conectar una web**: en la misma cuenta de Cloudflare (`*.workers.dev`) es automático. En otro dominio: `WEB_URL_<NEGOCIO>` o *Negocios → Dominios permitidos*, y la URL de Scan-bar en la web (`data-url` del script o `VITE_SCANBAR_URL`). Detalle en [INTEGRACION-WEBS.md](INTEGRACION-WEBS.md).
 
 ## Respaldos y restauración

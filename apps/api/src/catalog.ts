@@ -1,6 +1,6 @@
 // Productos de todas las webs desde Administración (docs/INTEGRACION-WEBS.md): alta con variantes —cada una con su
 // propio GTIN—, edición, retiro y hoja de etiquetas en PDF para recortar y pegar en los productos físicos.
-import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { HttpError } from './errors';
 import type { Db, Tx } from './db';
@@ -42,7 +42,7 @@ const productPatch = z.object({
   name: z.string().trim().min(1).max(160), category, priceCents: cents, stock: z.number().int().min(0).max(1_000_000),
   description: z.string().trim().max(600), imageUrl: imageUrl.nullable(), attrs: z.record(z.string(), z.unknown()), active: z.boolean(),
 }).partial().strict();
-const labelsQuery = z.object({
+export const labelsQuery = z.object({
   paper: z.enum(['letter', 'a4']).default('letter'), qr: z.enum(['0', '1']).default('0'),
   copies: z.coerce.number().int().min(1).max(50).default(1), scale: z.coerce.number().int().min(80).max(100).default(100),
   category: z.string().max(40).optional(), origin: z.enum(['repo', 'scanbar']).optional(),
@@ -124,16 +124,30 @@ export function registerCatalogAdmin(app: FastifyInstance, db: Db, h: { admin: G
   app.get('/v1/admin/tenants/:id/labels.pdf', { preHandler: h.admin }, async (req, reply) => {
     const t = await tenantOf(Number((req.params as { id: string }).id));
     const q = labelsQuery.parse(req.query);
-    const params: unknown[] = [t.id]; let where = '';
-    if (q.category) { params.push(slugify(q.category)); where += ` AND p.category = $${params.length}`; }
-    if (q.origin) { params.push(q.origin); where += ` AND p.origin = $${params.length}`; }
-    const rows = (await db.admin.query(`SELECT p.name, p.sku, c.gtin FROM products p JOIN codes c ON c.product_id = p.id AND c.retired_at IS NULL
-      WHERE p.tenant_id = $1 AND p.active${where} ORDER BY p.category, coalesce(p.variant_of, p.sku), p.id`, params)).rows as { name: string; sku: string; gtin: string }[];
-    const items = rows.flatMap(r => Array<typeof r>(q.copies).fill(r));
-    if (items.length > MAX_LABELS) throw new HttpError(422, 'demasiadas_etiquetas', `Máximo ${MAX_LABELS} etiquetas por archivo (pediste ${items.length}); filtra por categoría o baja las copias`);
-    const pdf = labelSheet(items, { tenantName: t.name, paper: q.paper, qr: q.qr === '1', scale: q.scale / 100 });
-    await h.audit(S(req), t.id, 'labels.pdf', null, { products: rows.length, labels: items.length, ...q });
-    return reply.header('Content-Type', 'application/pdf').header('Cache-Control', 'no-store')
-      .header('Content-Disposition', `attachment; filename="etiquetas-${t.slug}-${new Date().toISOString().slice(0, 10)}.pdf"`).send(pdf);
+    const r = await buildLabels((sql, params) => db.admin.query(sql, params), t, q);
+    await h.audit(S(req), t.id, 'labels.pdf', null, { products: r.products, labels: r.labels, ...q });
+    return sendLabels(reply, r);
   });
 }
+
+type Query = (sql: string, params: unknown[]) => Promise<{ rows: any[] }>;
+export type Labels = { pdf: Buffer; products: number; labels: number; filename: string };
+/**
+ * Hoja de etiquetas de un negocio: todos sus productos activos con código (o una categoría / un origen), con el nombre
+ * encima de cada código. La usan la consola (cualquier negocio) y el personal de cada negocio (solo el suyo, con RLS).
+ */
+export async function buildLabels(query: Query, t: { id: number; slug: string; name: string }, q: z.infer<typeof labelsQuery>): Promise<Labels> {
+  const params: unknown[] = [t.id]; let where = '';
+  if (q.category) { params.push(slugify(q.category)); where += ` AND p.category = $${params.length}`; }
+  if (q.origin) { params.push(q.origin); where += ` AND p.origin = $${params.length}`; }
+  const rows = (await query(`SELECT p.name, p.sku, c.gtin FROM products p JOIN codes c ON c.product_id = p.id AND c.retired_at IS NULL
+    WHERE p.tenant_id = $1 AND p.active${where} ORDER BY p.category, coalesce(p.variant_of, p.sku), p.id`, params)).rows as { name: string; sku: string; gtin: string }[];
+  const items = rows.flatMap(r => Array<typeof r>(q.copies).fill(r));
+  if (!items.length) throw new HttpError(404, 'sin_productos', 'No hay productos activos con código para esas opciones');
+  if (items.length > MAX_LABELS) throw new HttpError(422, 'demasiadas_etiquetas', `Máximo ${MAX_LABELS} etiquetas por archivo (pediste ${items.length}); filtra por categoría o baja las copias`);
+  const pdf = labelSheet(items, { tenantName: t.name, paper: q.paper, qr: q.qr === '1', scale: q.scale / 100 });
+  return { pdf, products: rows.length, labels: items.length, filename: `etiquetas-${t.slug}-${new Date().toISOString().slice(0, 10)}.pdf` };
+}
+export const sendLabels = (reply: FastifyReply, r: Labels) => reply.header('Content-Type', 'application/pdf').header('Cache-Control', 'no-store')
+  .header('Content-Disposition', `attachment; filename="${r.filename}"`).send(r.pdf);
+
