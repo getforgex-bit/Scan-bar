@@ -5,10 +5,10 @@ Estado: fases F0–F4 del plan implementadas, más los cambios pedidos después 
 ## Desviaciones del plan (y motivo)
 | Plan | Prototipo | Motivo |
 |---|---|---|
-| Docker Compose + Testcontainers | `embedded-postgres` (PostgreSQL **18** beta, no 16) | La máquina no tiene Docker ni Postgres instalados. Compose y CI quedan pendientes. |
+| Docker Compose + Testcontainers | Pruebas con `embedded-postgres` (PostgreSQL **18** beta, no 16); `Dockerfile` solo para producción; CI en GitHub Actions | La máquina de desarrollo no tenía Docker ni Postgres. Compose sigue sin hacerse. |
 | Drizzle | SQL plano versionado (`db/migrations`) + `pg` | Menos piezas; el DDL de la sección 2 se usa tal cual. |
 | `build_items` sin `tenant_id` | Se añadió `tenant_id` | RLS necesita la columna. `sales`/`sale_items`, `scan_events` también la tienen. |
-| Sesiones en BD | Sesiones en memoria del proceso | Suficiente para un solo proceso; se pierden al reiniciar. |
+| Sesiones en BD | Sesiones en BD (tabla `sessions`, solo el hash del identificador) con caché en memoria | Cumplido al preparar producción: el contenedor se duerme y se reinicia. |
 | Decodificación Wasm en Web Worker | Hilo principal | Pendiente; medir antes de moverlo. |
 | k6 | `scripts/load-builds.ts` (Node) | k6 no instalado; mismo perfil de carga. |
 | Login obligatorio (sección 8) | **Sesión opcional**: visitante anónimo, cliente registrado, operador, SuperAdmin | Pedido expreso. La matriz de permisos se conserva: lo público sigue siendo resolver + configurador (con límite de tasa); precio por GTIN (`/v1/scan`) y ventas siguen exigiendo personal. |
@@ -30,14 +30,14 @@ Estado: fases F0–F4 del plan implementadas, más los cambios pedidos después 
 4. Límite de tasa en memoria por IP: resolver 120/min, SVG 300/min, catálogos públicos 120/min, guardado público 10/min, registro 5/h, login 30/min; por llave de integración 60/min en `POST /v1/builds`.
 5. Secreto TOTP cifrado en reposo (AES-256-GCM, `TOTP_ENC_KEY`); la migración re-cifra los anteriores.
 
-Hallazgos **no** aplicados (no se pidieron): el login responde más rápido si el usuario no existe (enumeración de cuentas, que el registro también permite con su 409); la `Idempotency-Key` no caduca a las 24 h; sesiones y límites de tasa viven en memoria (se reinician con el proceso y no sirven con varios procesos).
+Hallazgos **no** aplicados (no se pidieron): el login responde más rápido si el usuario no existe (enumeración de cuentas, que el registro también permite con su 409); la `Idempotency-Key` no caduca a las 24 h; los límites de tasa viven en memoria (se reinician con el proceso y no sirven con varias instancias; por eso el contenedor tiene `max_instances: 1`).
 
 ## Integración con las webs: límites
 - Las webs estáticas usan la última copia guardada del catálogo y la refrescan para la siguiente visita: un alta o retiro se ve a la siguiente carga.
 - Sin `configurator`, Scan-bar no aplica reglas de compatibilidad a lo que llega de una web (las valida la web); solo existencia, negocio y estado de cada SKU.
 - Las configuraciones de las webs no se guardan en *Mis configuraciones* (no hay cookie entre sitios).
 - Las webs aún no abren un producto concreto desde la URL del resolver: la plantilla apunta a su página principal.
-- Biker Lifestyle tiene CSP estricta: hay que agregar el origen de Scan-bar (`connect-src`) y el host de las imágenes (`img-src`) al publicar.
+- Biker Lifestyle tiene CSP estricta: admite Scan-bar en `*.workers.dev` e imágenes https; si Scan-bar vive en otro dominio hay que agregarlo a `connect-src`.
 - El pastel personalizado de Dulce Encanto se sigue cotizando por WhatsApp (sin precio fijo no hay código).
 
 ## No implementado todavía
@@ -54,3 +54,10 @@ Hallazgos **no** aplicados (no se pidieron): el login responde más rápido si e
 - **Service worker / modo sin conexión con la CSP nueva**: el navegador integrado no registra service workers (fallaba igual antes de la CSP), así que no se pudo comprobar en un navegador real. La CSP incluye `worker-src 'self'`.
 - Revisión visual contra la sección 7 por una persona; "otra persona levanta el proyecto solo con el README".
 - `pg_dump`/`pg_restore` (no hay binarios); el respaldo probado es físico en frío.
+
+## Producción en Cloudflare: límites
+- **Una sola instancia** del contenedor (`max_instances: 1`, tipo `basic`): límites de tasa y caché de sesiones de un solo proceso. Suficiente para el proyecto; con más tráfico habría que mover los límites a la base o a Redis.
+- **Arranque en frío**: tras 20 minutos sin peticiones el contenedor se duerme; la siguiente petición tarda unos segundos (el Worker responde 503 con `Retry-After` mientras tanto). Las webs no esperan: pintan sus productos y usan su copia guardada.
+- **Requiere el plan Workers Paid** (Containers) y Docker para construir la imagen (en la máquina que despliega o en GitHub Actions).
+- **No se publicó en una cuenta real** desde el entorno de desarrollo: se probó la imagen contra un Postgres sin superusuario, `wrangler deploy --dry-run` de los siete Workers y las webs encontrando Scan-bar en `*.workers.dev` simulado en Chromium. El primer despliegue real es el que lo confirma ([DESPLIEGUE.md](DESPLIEGUE.md)).
+- La sincronización lee la rama principal de cada web: lo que esté en otra rama no llega a Scan-bar hasta unirse.

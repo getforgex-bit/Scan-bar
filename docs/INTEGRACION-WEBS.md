@@ -90,13 +90,18 @@ Los precios de los modificadores de Motz Café (`MODIFICADORES` en `coffeeData.t
 
 ## Configurar
 
-1. **Scan-bar publicado con HTTPS** (la cámara y las webs en HTTPS lo exigen). Define `RESOLVER_HOST`.
-2. **Dominios de cada web**: *Administración → Negocios → Editar → Dominios permitidos* (p. ej. `yokrem.pages.dev`). Sirven para el CORS y para que el resolver redirija ahí; la plantilla de producto puede apuntar a la página principal (`https://yokrem.pages.dev/`): las webs aún no abren un producto concreto desde la URL.
-3. **Cada web**:
-   - Estáticas: en la etiqueta `<script src="scanbar.js" data-url="https://…" data-tienda="…">` pon la URL de Scan-bar (vacía = integración apagada).
-   - Motz Café y Nova Core: variable `VITE_SCANBAR_URL` al compilar (en Cloudflare: *Settings → Variables*).
-   - Biker Lifestyle: agrega el origen de Scan-bar a `connect-src` y el host de las imágenes a `img-src` en `public/_headers`.
-4. `npm run sync:repos` (o `-- --local=../` para leer las webs de una carpeta) registra lo que define el código de cada web.
+Con todo publicado en la misma cuenta de Cloudflare (`<web>.<tu-cuenta>.workers.dev` y `scan-bar.<tu-cuenta>.workers.dev`) **no hay nada que
+configurar**: cada web deduce la URL de Scan-bar de su propio host, Scan-bar acepta a las webs de su misma cuenta (CORS) y aprende la URL de
+cada una (`worker` en `apps/api/src/sync.ts`) para que el resolver redirija ahí. Pasos completos: [DESPLIEGUE.md](DESPLIEGUE.md).
+
+Fuera de `workers.dev` (dominio propio o Pages):
+- **Scan-bar**: secreto `WEB_URL_<NEGOCIO>` con la URL de la web (o *Administración → Negocios → Editar*: plantilla y dominios permitidos).
+- **Estáticas**: `data-url="https://…"` en la etiqueta `<script src="scanbar.js" … data-tienda="…">` (`off` la apaga).
+- **Motz Café y Nova Core**: `VITE_SCANBAR_URL` al compilar (variable de build en Cloudflare; `off` la apaga).
+- **Biker Lifestyle**: su CSP ya admite `*.workers.dev`; si Scan-bar vive en otro dominio, agrégalo a `connect-src` en `public/_headers`.
+
+El catálogo del código de cada web se sincroniza solo (al arrancar y cada 10 minutos, solo los repositorios que cambiaron; *Sincronizar ahora*
+en la consola lo fuerza). `npm run sync:repos` hace lo mismo a mano (`-- --local=../` lee las webs de una carpeta).
 
 ## Demostración local (sin publicar nada)
 
@@ -114,12 +119,12 @@ Luego, en Scan-bar: *Administración → Productos y etiquetas* → YOKREM → a
 
 ## Decisiones y límites
 
-- **Las webs no dependen de Scan-bar**: sin URL configurada no hacen ninguna petición; con Scan-bar caído pintan solo sus productos (verificado en las seis con Chromium).
+- **Las webs no dependen de Scan-bar**: fuera de `workers.dev` y sin URL configurada no hacen ninguna petición; con Scan-bar caído o dormido pintan solo sus productos (verificado en las seis con Chromium).
 - **Copia local del catálogo**: la web estática usa la última copia guardada y la actualiza para la siguiente visita; un producto recién agregado o retirado se refleja a la siguiente carga (Motz Café lo refleja en cuanto responde). La primera visita espera como máximo 1.5 s.
 - **Compatibilidad**: la web valida sus reglas; Scan-bar las aplica solo si la web pide un `configurator`. Un cliente podría registrar un ensamble incompatible llamando a la API directamente; el código solo describe y congela el precio, la venta la hace el personal en Caja.
 - **Las configuraciones de las webs no se ligan a cuentas de Scan-bar** (sin cookies entre sitios): no aparecen en *Mis configuraciones*.
 - **Pastel personalizado de Dulce Encanto**: sigue cotizándose por WhatsApp; no tiene precio fijo que congelar en un código.
 - **Precios mostrados vs. registrados**: si la web tiene una copia vieja del precio, manda el de Scan-bar (`totalCents` de la respuesta).
 - **Etiquetas**: EAN-13 al 100 % del tamaño nominal (módulo de 0.33 mm, barras truncadas a ~11 mm de alto para caber en la etiqueta) o al 80 %. Imprimir con "tamaño real". Los códigos del PDF se verificaron decodificándolos con ZXing (`tests/webs.test.ts`).
-- **Límites de tasa y sesiones en memoria** (igual que el resto del prototipo): con varios procesos habría que moverlos a la base o a Redis.
+- **Límites de tasa en memoria**: hay una sola instancia del contenedor (`max_instances: 1`); con varias habría que moverlos a la base o a Redis. Las sesiones ya viven en la base.
 - **Prefijo 750**: académico; para circular en comercio abierto se requiere licencia GS1 México.

@@ -197,8 +197,12 @@ export async function ensureTenant(c: Client, src: WebSource): Promise<number> {
   const t = (await c.query(
     `INSERT INTO tenants (slug,name,gs1_prefix,company_prefix,product_url_tpl,allowed_domains) VALUES ($1,$2,'750',$3,$4,$5)
      ON CONFLICT (slug) DO UPDATE SET name=EXCLUDED.name RETURNING id, product_url_tpl`, [src.slug, src.name, src.companyPrefix, tpl, domains])).rows[0];
-  if (site && t.product_url_tpl.startsWith('https://github.com/'))
-    await c.query('UPDATE tenants SET product_url_tpl=$2, allowed_domains=$3 WHERE id=$1', [t.id, site, domains]);
+  // Se actualiza mientras la URL siga siendo automática (la provisional de GitHub o la de workers.dev), p. ej. al conocerse la cuenta
+  // de Cloudflare o al definir WEB_URL_<NEGOCIO>. Una plantilla editada a mano en la consola no se toca.
+  const automatic = (u: string) => u.startsWith('https://github.com/') || new RegExp(`^https://${src.worker}\\.[a-z0-9-]+\\.workers\\.dev/$`, 'i').test(u);
+  if (site && site !== t.product_url_tpl && automatic(t.product_url_tpl))
+    await c.query(`UPDATE tenants SET product_url_tpl=$2,
+      allowed_domains=ARRAY(SELECT DISTINCT d FROM unnest(allowed_domains || $3::text[]) d WHERE d <> 'github.com') WHERE id=$1`, [t.id, site, domains]);
   await c.query('INSERT INTO code_counters (tenant_id) VALUES ($1) ON CONFLICT DO NOTHING', [t.id]);
   return Number(t.id);
 }

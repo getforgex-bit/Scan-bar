@@ -93,6 +93,20 @@ describe('arranque de producción', () => {
     try { await ensureTenant(c, src); } finally { c.release(); }
     const t = (await ctx.owner.query("SELECT product_url_tpl, allowed_domains FROM tenants WHERE slug='cafe-motz'")).rows[0];
     expect(t).toEqual({ product_url_tpl: 'https://motz-cafe.forgex.workers.dev/', allowed_domains: ['motz-cafe.forgex.workers.dev'] });
+    // dominio propio después: WEB_URL_<NEGOCIO> reemplaza la URL automática y conserva el dominio anterior
+    process.env.WEB_URL_CAFE_MOTZ = 'https://cafe.ejemplo.mx';
+    const tpl = async () => (await ctx.owner.query("SELECT product_url_tpl, allowed_domains FROM tenants WHERE slug='cafe-motz'")).rows[0];
+    const ensure = async () => { const k = await ctx.db.adminRw.connect(); try { await ensureTenant(k, src); } finally { k.release(); } };
+    try {
+      await ensure();
+      const u = await tpl();
+      expect(u.product_url_tpl).toBe('https://cafe.ejemplo.mx/');
+      expect([...u.allowed_domains].sort()).toEqual(['cafe.ejemplo.mx', 'motz-cafe.forgex.workers.dev']);
+      // una plantilla editada a mano en la consola no se sobrescribe
+      await ctx.owner.query("UPDATE tenants SET product_url_tpl='https://cafe.ejemplo.mx/menu?sku={sku}' WHERE slug='cafe-motz'");
+      process.env.WEB_URL_CAFE_MOTZ = 'https://otra.ejemplo.mx'; await ensure();
+      expect((await tpl()).product_url_tpl).toBe('https://cafe.ejemplo.mx/menu?sku={sku}');
+    } finally { delete process.env.WEB_URL_CAFE_MOTZ; }
   });
 });
 
