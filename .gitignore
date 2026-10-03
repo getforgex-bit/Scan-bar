@@ -1,0 +1,7 @@
+node_modules
+.pgdata
+dist
+.env
+.dev-credentials.txt
+*.log
+.cache
