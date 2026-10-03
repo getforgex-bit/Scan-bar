@@ -9,10 +9,6 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
-if not exist node_modules (
-  echo Instalando lo necesario por unica vez, tarda unos minutos...
-  call npm install
-  if errorlevel 1 ( pause & exit /b 1 )
-)
+rem La primera vez, npm run servidor instala lo necesario (servidor/iniciar.mjs).
 call npm run servidor
 pause

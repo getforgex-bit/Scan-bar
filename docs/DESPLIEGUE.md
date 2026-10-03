@@ -37,8 +37,10 @@ cualquier push a `main`) publica la versión gratuita.
 Requisitos: **Node.js 22.12 o superior** ([nodejs.org](https://nodejs.org), versión LTS) y el repositorio `Scan-bar` descargado
 (*Code → Download ZIP* en GitHub, o `git clone`). Git es opcional: sin él, la sincronización descarga los archivos por HTTP.
 
-- **Windows**: doble clic en **`Servidor Scan-bar.cmd`**. La primera vez instala lo necesario (unos minutos).
-- **macOS / Linux**: `sh servidor.sh` (o `npm install` y `npm run servidor`).
+- **Windows**: doble clic en **`Servidor Scan-bar.cmd`** (o, en una terminal dentro de la carpeta, `npm run servidor`).
+- **macOS / Linux**: `sh servidor.sh` (o `npm run servidor`).
+
+La primera vez instala lo necesario sola (unos minutos, con internet); no hace falta `npm install`.
 
 Se abre el panel en el navegador (`http://127.0.0.1:4100`, solo accesible desde tu PC) y queda una ventana negra: déjala abierta mientras uses
 Scan-bar. Cerrarla (o Ctrl+C) apaga todo en orden.
@@ -85,6 +87,9 @@ apagado, copia la carpeta `.servidor/` completa.
 | El panel dice "La llave no coincide…" | Vuelve a copiar la llave del panel al secreto `SCANBAR_PROXY_KEY` del Worker (paso 2) |
 | "Al Worker le falta el secreto SCANBAR_PROXY_KEY" | Agrega el secreto (paso 2) |
 | "El Worker respondió 404/500…" | El Worker `scan-bar` aún tiene una versión anterior: *Deployments → Retry deployment* en Cloudflare |
+| "A Windows le falta Microsoft Visual C++ Redistributable" | Instálalo ([vc_redist.x64.exe](https://aka.ms/vs/17/release/vc_redist.x64.exe)) y vuelve a encender |
+| "No se pudo abrir initdb / postgres / cloudflared" | Un antivirus lo bloquea: permite la carpeta de Scan-bar y vuelve a encender |
+| `"tsx" no se reconoce como un comando` | Copia anterior del repositorio: descarga la versión actual (ya instala sola) o ejecuta `npm install` una vez |
 | "No se pudo descargar cloudflared" | Instálalo a mano ([descargas de Cloudflare](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/)) y vuelve a encender |
 | "El panel ya está abierto" | Ya hay un panel corriendo: abre `http://127.0.0.1:4100` |
 | Encendido pero "No responde desde internet" | Revisa la conexión de la PC; el panel reintenta solo y vuelve a avisar a Cloudflare |

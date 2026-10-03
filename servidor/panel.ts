@@ -124,11 +124,19 @@ async function encender() {
     log('panel', cfg.publicUrl ? `Encendido: ${cfg.publicUrl}` : `Encendido en ${LOCAL_URL} (solo esta PC)`);
     vigilar();
   } catch (e: any) {
-    error = e?.message ?? String(e);
+    error = explicar(e?.message ?? String(e));
     log('panel', `No se pudo encender: ${error}`, 'error');
     await apagar(true);
     estado = 'error';
   }
+}
+
+/** Errores de Windows con solución conocida, en palabras claras (el detalle técnico queda en el registro). */
+function explicar(m: string) {
+  // 3221225781 = 0xC0000135 (falta una DLL): PostgreSQL para Windows necesita el runtime de Visual C++.
+  if (/\b(3221225781|-1073741515)\b/.test(m))
+    return 'A Windows le falta "Microsoft Visual C++ Redistributable", que necesita la base de datos. Instálalo desde https://aka.ms/vs/17/release/vc_redist.x64.exe y vuelve a encender.';
+  return m;
 }
 
 async function apagar(porError = false) {
@@ -154,10 +162,22 @@ async function iniciarPostgres() {
     databaseDir: dir, user: 'postgres', password: cfg.pgPassword, port: PG_PORT, persistent: true,
     onLog: m => log('postgres', String(m)), onError: m => log('postgres', String(m), 'error'),
   });
-  if (!fs.existsSync(path.join(dir, 'PG_VERSION'))) { log('panel', 'Creando la base de datos (primera vez)…'); await pgInst.initialise(); }
-  await pgInst.start();
+  try {
+    if (!fs.existsSync(path.join(dir, 'PG_VERSION'))) { log('panel', 'Creando la base de datos (primera vez)…'); await vigilado(pgInst.initialise()); }
+    await vigilado(pgInst.start());
+  } catch (e) {
+    // Sin proceso vivo que detener: pgInst.stop() esperaría para siempre un cierre que ya pasó (o que nunca empezó).
+    pgInst = null;
+    throw e instanceof Error ? e : new Error(`La base de datos se cerró al arrancar (¿otro programa usa el puerto ${PG_PORT}?); revisa el registro.`);
+  }
   try { await pgInst.createDatabase('scanbar'); } catch { /* ya existe */ }
 }
+
+// embedded-postgres no escucha el 'error' de sus procesos: si no puede abrir initdb o postgres (antivirus, permisos), el
+// error llega a uncaughtException (abajo) y su promesa no termina nunca. alFallarAlAbrir corta esa espera.
+let alFallarAlAbrir: ((e: Error) => void) | null = null;
+const vigilado = <T>(p: Promise<T>) => new Promise<T>((resolve, reject) => { alFallarAlAbrir = reject; p.then(resolve, reject); })
+  .finally(() => { alFallarAlAbrir = null; });
 
 /** Variables para la app: las de este proceso sin nada de bases o secretos ajenos (p. ej. un .env de desarrollo). */
 function entornoApp(): NodeJS.ProcessEnv {
@@ -230,6 +250,7 @@ async function iniciarTunel(): Promise<string> {
       if (m && !listo) { listo = true; clearTimeout(plazo); resolve(m[0]); }
     };
     t.stdout!.on('data', leer); t.stderr!.on('data', leer);
+    t.on('error', (e: any) => { clearTimeout(plazo); if (!listo) reject(new Error(`No se pudo abrir cloudflared (${e.code}). Si tienes antivirus, permite la carpeta de Scan-bar y vuelve a encender.`)); });
     t.on('exit', code => {
       clearTimeout(plazo);
       if (!listo) { reject(new Error(`El túnel se cerró al iniciar (código ${code ?? '—'}).`)); return; }
@@ -279,6 +300,7 @@ function correr(cmd: string, args: string[]) {
   return new Promise<void>((resolve, reject) => {
     const p = spawn(cmd, args, { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
     p.stdout.on('data', d => log('panel', String(d))); p.stderr.on('data', d => log('panel', String(d), 'aviso'));
+    p.on('error', reject);
     p.on('exit', code => code === 0 ? resolve() : reject(new Error(`${path.basename(args[0] ?? cmd)} terminó con código ${code}`)));
   });
 }
@@ -404,3 +426,11 @@ for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGBREAK'] as const) process.
   process.exit(0);
 });
 process.on('exit', () => { for (const p of [tunel, app]) try { p?.kill(); } catch { /* ya terminó */ } });
+// Un error que nadie atrapa (p. ej. embedded-postgres no puede abrir initdb/postgres) no cierra el panel: queda en el
+// registro y el paso que lo sufrió falla con su propio mensaje.
+process.on('uncaughtException', (e: any) => {
+  if (!e?.syscall?.startsWith('spawn')) { log('panel', `Error inesperado: ${e?.stack ?? e}`, 'error'); return; }
+  const m = `No se pudo abrir ${path.basename(e.path ?? '')} (${e.code}). Si tienes antivirus, permite la carpeta de Scan-bar y vuelve a encender.`;
+  log('panel', m, 'error');
+  alFallarAlAbrir?.(new Error(m));
+});

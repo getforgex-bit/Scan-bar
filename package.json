@@ -21,7 +21,7 @@
     "start:prod": "tsx scripts/start.ts",
     "cf:deploy": "wrangler deploy",
     "cf:logs": "wrangler tail",
-    "servidor": "tsx servidor/panel.ts"
+    "servidor": "node servidor/iniciar.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261003.1",
