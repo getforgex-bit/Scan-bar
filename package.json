@@ -20,11 +20,10 @@
     "gen-api-docs": "tsx scripts/gen-api-docs.ts",
     "start:prod": "tsx scripts/start.ts",
     "cf:deploy": "wrangler deploy",
-    "cf:secrets": "node cloudflare/secrets.mjs",
-    "cf:logs": "wrangler tail"
+    "cf:logs": "wrangler tail",
+    "servidor": "tsx servidor/panel.ts"
   },
   "devDependencies": {
-    "@cloudflare/containers": "^0.3.7",
     "@cloudflare/workers-types": "^5.20261003.1",
     "@types/node": "^26.6.3",
     "@types/pg": "^8.23.1",

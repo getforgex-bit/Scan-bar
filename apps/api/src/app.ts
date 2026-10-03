@@ -55,7 +55,9 @@ export async function buildApp(opts: AppOpts = {}): Promise<FastifyInstance & { 
   if (isProd()) encryptSecret('arranque'); // en producción, sin TOTP_ENC_KEY no se arranca
   const db = opts.db ?? makeDb();
   // TRUST_PROXY=1 cuando hay un proxy TLS delante: req.ip y req.hostname salen de X-Forwarded-*.
-  const app = Fastify({ logger: false, genReqId: () => crypto.randomUUID(), trustProxy: process.env.TRUST_PROXY === '1' }) as unknown as FastifyInstance & { db: Db };
+  // PROXY_KEY: el servidor es público (Render) y solo debe hablar con el Worker de Cloudflare, que firma cada petición.
+  const proxyKey = process.env.PROXY_KEY ?? '';
+  const app = Fastify({ logger: false, genReqId: () => crypto.randomUUID(), trustProxy: proxyKey ? true : process.env.TRUST_PROXY === '1' }) as unknown as FastifyInstance & { db: Db };
   app.db = db;
   await app.register(cookie);
   app.addContentTypeParser('text/csv', { parseAs: 'string' }, (_r, body, done) => done(null, body));
@@ -67,6 +69,20 @@ export async function buildApp(opts: AppOpts = {}): Promise<FastifyInstance & { 
   const audit2 = (s: Session, action: string) => db.adminRw.query('INSERT INTO audit_log (tenant_id,user_id,action) VALUES ($1,$2,$3)', [s.tenantId || null, s.userId, action]);
 
   // ---- hooks ----
+  // Con PROXY_KEY, solo se atiende lo que llega por el Worker (encabezado x-scanbar-proxy); de él salen el host público y la
+  // IP real. Así nadie que llame directo al servidor puede hacerse pasar por el Worker (p. ej. para que se aprenda otro host).
+  if (proxyKey) app.addHook('onRequest', async (req, reply) => {
+    const h = req.raw.headers;
+    const given = h['x-scanbar-proxy'];
+    if (typeof given !== 'string' || !crypto.timingSafeEqual(Buffer.from(sha256(given)), Buffer.from(sha256(proxyKey)))) {
+      if (req.url === '/health') { delete h['x-forwarded-host']; delete h['x-forwarded-for']; delete h['x-forwarded-proto']; return; } // revisión de salud del servidor
+      return reply.status(403).type('text/plain; charset=utf-8').send('Scan-bar solo responde en su dirección pública.');
+    }
+    delete h['x-scanbar-proxy'];
+    h['x-forwarded-host'] = typeof h['x-scanbar-host'] === 'string' ? h['x-scanbar-host'] : '';
+    h['x-forwarded-proto'] = 'https';
+    h['x-forwarded-for'] = typeof h['x-scanbar-ip'] === 'string' ? h['x-scanbar-ip'] : '';
+  });
   app.addHook('onRequest', async (req, reply) => {
     reply.header('X-Request-Id', req.id);
     securityHeaders(req, reply);

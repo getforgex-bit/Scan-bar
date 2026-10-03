@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
+  <title>Scan-bar · Servidor</title>
+  <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/styles.css" />
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="top">
+    <div class="marca">
+      <img src="/icon.svg" alt="" width="32" height="32" />
+      <div><span class="label">Servidor en esta PC</span><h1>Scan-bar</h1></div>
+    </div>
+    <div role="tablist" aria-label="Secciones" class="tabs">
+      <button role="tab" id="t-servidor" aria-controls="p-servidor" aria-selected="true">Servidor</button>
+      <button role="tab" id="t-datos" aria-controls="p-datos" aria-selected="false" tabindex="-1">Datos</button>
+    </div>
+  </header>
+
+  <main>
+    <section id="p-servidor" role="tabpanel" aria-labelledby="t-servidor" class="principal">
+      <button id="power" class="power" type="button" aria-describedby="estado-texto">
+        <svg viewBox="0 0 24 24" aria-hidden="true" width="56" height="56"><path d="M12 3v8" /><path d="M6.6 6.6a8 8 0 1 0 10.8 0" /></svg>
+        <span id="power-label">Encender</span>
+      </button>
+      <p id="estado-texto" class="estado" role="status" aria-live="polite">Apagado</p>
+      <p id="estado-detalle" class="detalle"></p>
+      <p id="enlace" class="enlace" hidden>
+        <a id="enlace-a" target="_blank" rel="noopener"></a>
+        <button type="button" class="link" data-copiar="enlace-a">Copiar</button>
+      </p>
+      <p id="aviso" class="aviso" hidden></p>
+      <p class="nota">Mientras esté encendido, deja esta PC prendida y con internet. Cerrar esta pestaña no lo apaga; se apaga con el botón o cerrando la ventana negra del servidor.</p>
+    </section>
+
+    <section id="p-datos" role="tabpanel" aria-labelledby="t-datos" class="datos" hidden>
+      <article class="card" aria-labelledby="h-estado">
+        <h2 id="h-estado">Estado</h2>
+        <dl class="kv">
+          <dt>Servidor</dt><dd id="d-estado">—</dd>
+          <dt>Encendido desde</dt><dd id="d-desde">—</dd>
+          <dt>Dirección pública</dt><dd id="d-publica">—</dd>
+          <dt>Desde internet</dt><dd id="d-salud">—</dd>
+          <dt>Túnel</dt><dd id="d-tunel" class="mono">—</dd>
+          <dt>En esta PC</dt><dd id="d-local" class="mono">—</dd>
+          <dt>Equipo</dt><dd id="d-equipo">—</dd>
+        </dl>
+      </article>
+
+      <article class="card" aria-labelledby="h-cf">
+        <h2 id="h-cf">Conexión con Cloudflare</h2>
+        <p class="ayuda">Así las webs y los códigos QR encuentran este servidor en una dirección fija. Se hace una sola vez.</p>
+        <form id="f-pub" class="fila">
+          <label for="pub">Dirección pública de Scan-bar</label>
+          <input id="pub" type="url" inputmode="url" placeholder="https://scan-bar.tu-cuenta.workers.dev" autocomplete="off" spellcheck="false" />
+          <button type="submit">Guardar</button>
+        </form>
+        <p id="pub-msg" class="msg" role="status"></p>
+        <h3>Llave del Worker</h3>
+        <p class="fila"><code id="llave" class="secreto" data-oculto="1">••••••••••••••••</code>
+          <button type="button" class="secundario" data-mostrar="llave">Mostrar</button>
+          <button type="button" class="secundario" data-copiar="llave">Copiar</button></p>
+        <ol class="pasos">
+          <li>En Cloudflare abre <b>Workers &amp; Pages → scan-bar → Settings → Variables and Secrets</b>.</li>
+          <li><b>Add</b> → tipo <b>Secret</b>, nombre <code>SCANBAR_PROXY_KEY</code>, valor: la llave de arriba → <b>Deploy</b>.</li>
+          <li>Pega aquí arriba la dirección de ese Worker (<code>https://scan-bar.&lt;tu-cuenta&gt;.workers.dev</code>) y guarda.</li>
+        </ol>
+      </article>
+
+      <article class="card ancho" aria-labelledby="h-neg">
+        <h2 id="h-neg">Negocios</h2>
+        <p id="neg-vacio" class="ayuda">Enciende el servidor para ver los números.</p>
+        <div class="tabla"><table id="neg" hidden>
+          <thead><tr><th scope="col">Web</th><th scope="col" class="num">Productos</th><th scope="col" class="num">Agregados en consola</th><th scope="col" class="num">Códigos</th></tr></thead>
+          <tbody></tbody>
+        </table></div>
+        <div id="totales" class="totales" hidden>
+          <div><span class="label">Pedidos con código</span><b id="d-conf">—</b></div>
+          <div><span class="label">Escaneos hoy</span><b id="d-esc">—</b></div>
+          <div><span class="label">Ventas hoy</span><b id="d-ventas">—</b></div>
+          <div><span class="label">Tamaño de la base</span><b id="d-tam">—</b></div>
+        </div>
+      </article>
+
+      <article class="card" aria-labelledby="h-sync">
+        <h2 id="h-sync">Sincronización con GitHub</h2>
+        <p class="ayuda">Los productos del código de cada web llegan solos al encender y cada 10 minutos.</p>
+        <ul id="sync" class="lista"></ul>
+      </article>
+
+      <article class="card" aria-labelledby="h-cuentas">
+        <h2 id="h-cuentas">Cuentas</h2>
+        <dl class="kv">
+          <dt>Administrador</dt><dd><span id="c-admin" class="mono">—</span></dd>
+          <dt>Contraseña</dt><dd><code id="c-admin-pw" class="secreto" data-oculto="1">••••••••</code>
+            <button type="button" class="link" data-mostrar="c-admin-pw">Mostrar</button>
+            <button type="button" class="link" data-copiar="c-admin-pw">Copiar</button></dd>
+          <dt>Cajas</dt><dd id="c-cajas" class="mono pequeno">—</dd>
+          <dt>Contraseña de cajas</dt><dd><code id="c-caja-pw" class="secreto" data-oculto="1">••••••••</code>
+            <button type="button" class="link" data-mostrar="c-caja-pw">Mostrar</button>
+            <button type="button" class="link" data-copiar="c-caja-pw">Copiar</button></dd>
+        </dl>
+        <p class="ayuda">La primera vez que entres a Administración te pedirá activar el segundo factor con una app de autenticación. Para cambiar estas contraseñas, edita <span id="c-config" class="mono">.servidor/config.json</span> y vuelve a encender.</p>
+      </article>
+
+      <article class="card ancho" aria-labelledby="h-reg">
+        <div class="fila entre">
+          <h2 id="h-reg">Registro</h2>
+          <div class="fila">
+            <label for="filtro" class="sr">Mostrar</label>
+            <select id="filtro">
+              <option value="">Todo</option><option value="scan-bar">Scan-bar</option><option value="postgres">Base de datos</option>
+              <option value="túnel">Túnel</option><option value="panel">Panel</option><option value="!">Solo avisos y errores</option>
+            </select>
+            <button type="button" class="secundario" id="pausar" aria-pressed="false">Pausar</button>
+            <button type="button" class="secundario" id="copiar-log">Copiar</button>
+          </div>
+        </div>
+        <ol id="log" class="log" tabindex="0" aria-label="Registro del servidor"></ol>
+        <p class="ayuda">También se guarda en <span id="d-logfile" class="mono">.servidor/registro.log</span>.</p>
+      </article>
+    </section>
+  </main>
+</body>
+</html>

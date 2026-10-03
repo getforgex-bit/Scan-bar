@@ -3,7 +3,7 @@
 Resolver central de códigos EAN-13 / QR (GS1 Digital Link) para varios negocios, con escáner PWA y mini POS. Es la base de datos única de las
 seis páginas web de los negocios: los productos que se agregan aquí aparecen en su web con su código, las configuraciones que el cliente arma
 en la web (bebida, ensamble de PC) reciben su código aquí, y cada web se imprime en una hoja de etiquetas PDF.
-Diseño: [docs/arquitectura.md](docs/arquitectura.md). **Publicar (Cloudflare + Neon): [docs/DESPLIEGUE.md](docs/DESPLIEGUE.md).** Integración con las webs: [docs/INTEGRACION-WEBS.md](docs/INTEGRACION-WEBS.md). Límites y desviaciones: [docs/LIMITES.md](docs/LIMITES.md). Mediciones: [docs/mediciones.md](docs/mediciones.md).
+Diseño: [docs/arquitectura.md](docs/arquitectura.md). **Publicar gratis (webs en Cloudflare, servidor en tu PC): [docs/DESPLIEGUE.md](docs/DESPLIEGUE.md).** Integración con las webs: [docs/INTEGRACION-WEBS.md](docs/INTEGRACION-WEBS.md). Límites y desviaciones: [docs/LIMITES.md](docs/LIMITES.md). Mediciones: [docs/mediciones.md](docs/mediciones.md).
 
 ## Levantarlo (Windows/macOS/Linux, solo Node ≥ 22)
 
@@ -50,12 +50,14 @@ La cámara exige HTTPS salvo en `localhost`. Para probar desde un teléfono, exp
 - **Configurador genérico** (oculto en la PWA): grupos y reglas como datos por negocio (`equals`, `in`, `sum_lte`, `forbid`, `require`), evaluados igual en cliente y servidor; contenido con precio congelado; GTIN determinista por hash.
 - **Administración**: negocios, configuradores, productos de todas las webs y etiquetas, usuarios, llaves, visor de BD, depurador, métricas, alertas y eventos en vivo.
 
-## Producción
+## Producción (gratis)
 
-Imagen Docker (`Dockerfile`) que corre en **Cloudflare Containers** detrás de un Worker (`cloudflare/src/index.ts`, configuración en
-`wrangler.jsonc` de la raíz), con PostgreSQL en **Neon**: `scripts/start.ts` migra, crea los negocios y las cuentas, arranca el servidor y
-sincroniza las webs. Se publica con el despliegue por defecto de Cloudflare (*Import a repository*, sin cambiar nada; cada push a `main`
-vuelve a publicar) o con `npm run cf:deploy`; secretos en el panel o con `npm run cf:secrets`. Todo en [docs/DESPLIEGUE.md](docs/DESPLIEGUE.md).
+- **Servidor en tu PC**: doble clic en `Servidor Scan-bar.cmd` (Windows) o `sh servidor.sh` → panel con **un botón** para encender y
+  apagar, y una pestaña **Datos** con el registro en vivo, el estado, los productos por web, la sincronización y las cuentas
+  (`servidor/panel.ts`). Encender arranca PostgreSQL embebido, la app (`scripts/start.ts`) y un túnel gratuito de Cloudflare.
+- **Dirección fija**: el Worker `scan-bar` (`cloudflare/src/index.ts`, `wrangler.jsonc` en la raíz, plan gratuito) da
+  `https://scan-bar.<tu-cuenta>.workers.dev` y pasa cada visita a tu PC, firmada con una llave (`PROXY_KEY`).
+- El `Dockerfile` sigue sirviendo para un servidor en la nube. Todo en [docs/DESPLIEGUE.md](docs/DESPLIEGUE.md).
 
 ## Pruebas
 

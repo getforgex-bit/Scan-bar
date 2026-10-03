@@ -42,11 +42,14 @@ export function rateLimiter() {
 }
 
 // ---- cifrado del secreto TOTP (AES-256-GCM, clave en TOTP_ENC_KEY) ----
-function key(): Buffer {
-  const k = Buffer.from(devSecret('TOTP_ENC_KEY', 32, 'base64'), 'base64');
-  if (k.length !== 32) throw new Error('TOTP_ENC_KEY debe ser de 32 bytes en base64');
-  return k;
+/** 32 bytes en base64 se usan tal cual; cualquier otro secreto largo (p. ej. el que genera Render) se deriva con SHA-256. */
+export function totpKey(secret: string): Buffer {
+  const k = Buffer.from(secret, 'base64');
+  if (k.length === 32 && k.toString('base64') === secret) return k;
+  if (secret.length < 32) throw new Error('TOTP_ENC_KEY debe ser de 32 bytes en base64 o un secreto aleatorio de al menos 32 caracteres');
+  return crypto.createHash('sha256').update(secret).digest();
 }
+function key(): Buffer { return totpKey(devSecret('TOTP_ENC_KEY', 32, 'base64')); }
 export function encryptSecret(plain: string): string {
   const iv = crypto.randomBytes(12);
   const c = crypto.createCipheriv('aes-256-gcm', key(), iv);

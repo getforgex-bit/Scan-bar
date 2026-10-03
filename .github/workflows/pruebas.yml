@@ -23,6 +23,6 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck   # app y Worker
-      - run: npx wrangler deploy --dry-run --containers-rollout=none   # la configuración de Cloudflare es válida
+      - run: npx wrangler deploy --dry-run   # la configuración de Cloudflare es válida
       - run: npm test
       - run: npm run build

@@ -150,6 +150,33 @@ export function siteUrl(src: WebSource, env = process.env): string | null {
   return m ? `https://${src.worker}.${m[1]}/` : null;
 }
 
+// ---- descarga de los repos: con git si está instalado; si no (p. ej. una PC con Windows sin Git), por HTTP ----
+let gitOk: Promise<boolean> | undefined;
+/** SYNC_VIA=git|http fuerza un camino; por omisión, git si existe. */
+const useGit = () => process.env.SYNC_VIA === 'http' ? Promise.resolve(false) : process.env.SYNC_VIA === 'git' ? Promise.resolve(true)
+  : (gitOk ??= exec('git', ['--version'], { timeout: 10_000 }).then(() => true, () => false));
+const ghHeaders = (accept: string) => ({ accept, 'user-agent': 'scan-bar-sync', ...(process.env.SYNC_GITHUB_TOKEN ? { authorization: `Bearer ${process.env.SYNC_GITHUB_TOKEN}` } : {}) });
+async function gh(url: string, accept: string): Promise<Response> {
+  const r = await fetch(url, { headers: ghHeaders(accept), signal: AbortSignal.timeout(30_000) });
+  if (!r.ok) throw new Error(`GitHub respondió ${r.status} en ${new URL(url).pathname}${r.status === 403 || r.status === 429 ? ' (límite de consultas; define SYNC_GITHUB_TOKEN o instala Git)' : ''}`);
+  return r;
+}
+/** Igual que el sparse-checkout sin conos: "/archivo" exacto o "/carpeta/" con todo lo de dentro. */
+export const matchesSparse = (file: string, patterns: string[]) => patterns.some(p => p.endsWith('/') ? file.startsWith(p.slice(1)) : file === p.slice(1));
+const httpHead = async (src: WebSource) => (await (await gh(`https://api.github.com/repos/${OWNER}/${src.repo}/commits/HEAD`, 'application/vnd.github.sha')).text()).trim();
+async function httpFetch(src: WebSource, dir: string): Promise<string> {
+  const head = await httpHead(src);
+  const tree = await (await gh(`https://api.github.com/repos/${OWNER}/${src.repo}/git/trees/${head}?recursive=1`, 'application/vnd.github+json')).json() as { tree: { path: string; type: string }[] };
+  const files = tree.tree.filter(t => t.type === 'blob' && matchesSparse(t.path, src.paths));
+  for (const f of files) {
+    const raw = await gh(`https://raw.githubusercontent.com/${OWNER}/${src.repo}/${head}/${f.path.split('/').map(encodeURIComponent).join('/')}`, '*/*');
+    const out = path.join(dir, ...f.path.split('/'));
+    fs.mkdirSync(path.dirname(out), { recursive: true });
+    fs.writeFileSync(out, Buffer.from(await raw.arrayBuffer()));
+  }
+  return head;
+}
+
 /** Clonado parcial: solo los archivos de catálogo de la web (segundos y unos cientos de KB, sin fotos ni videos). */
 export async function fetchRepo(src: WebSource, opts: { local?: string } = {}): Promise<{ dir: string; head: string; cleanup: () => void }> {
   if (opts.local) {
@@ -160,6 +187,10 @@ export async function fetchRepo(src: WebSource, opts: { local?: string } = {}): 
   }
   const base = fs.mkdtempSync(path.join(process.env.SYNC_CACHE_DIR ?? os.tmpdir(), `scanbar-${src.slug}-`));
   const dir = path.join(base, 'repo');
+  if (!(await useGit())) {
+    try { fs.mkdirSync(dir); const head = await httpFetch(src, dir); return { dir, head, cleanup: () => fs.rmSync(base, { recursive: true, force: true }) }; }
+    catch (e) { fs.rmSync(base, { recursive: true, force: true }); throw e; }
+  }
   const git = (...args: string[]) => exec('git', args, { timeout: 60_000, maxBuffer: 1 << 20 });
   try {
     await git('clone', '--depth', '1', '--filter=blob:none', '--no-checkout', '--quiet', `https://github.com/${OWNER}/${src.repo}.git`, dir);
@@ -171,8 +202,9 @@ export async function fetchRepo(src: WebSource, opts: { local?: string } = {}): 
 }
 
 /** Último commit de la rama principal del repo, sin descargar nada (para saber si hay que sincronizar). */
-export const remoteHead = async (src: WebSource) =>
-  (await exec('git', ['ls-remote', `https://github.com/${OWNER}/${src.repo}.git`, 'HEAD'], { timeout: 30_000 })).stdout.split(/\s/)[0];
+export const remoteHead = async (src: WebSource) => (await useGit())
+  ? (await exec('git', ['ls-remote', `https://github.com/${OWNER}/${src.repo}.git`, 'HEAD'], { timeout: 30_000 })).stdout.split(/\s/)[0]
+  : httpHead(src);
 
 function validate(items: Item[], who: string): Item[] {
   const seen = new Set<string>();

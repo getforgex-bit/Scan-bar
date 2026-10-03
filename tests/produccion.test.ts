@@ -138,3 +138,55 @@ describe('CORS para las webs de la misma cuenta de Cloudflare', () => {
     expect(process.env.RESOLVER_HOST).toBe('scan-bar.forgex.workers.dev'); // aprendido de la primera petición en workers.dev
   });
 });
+
+describe('servidor público detrás del Worker gratuito (Render + PROXY_KEY)', () => {
+  it('solo atiende lo que firma el Worker; de él toma el host público y la IP real, y nadie más puede imponer el host', async () => {
+    process.env.PROXY_KEY = 'llave-del-worker-de-prueba-0123456789';
+    const px = await buildApp({ db: makeDb(ctx.db.urls), logRequests: false, timers: false });
+    delete process.env.PROXY_KEY;
+    try {
+      const get = (url: string, headers: Record<string, string> = {}) => px.inject({ method: 'GET', url, headers, remoteAddress: '10.0.0.9' });
+      // directo al servidor, sin llave (aunque traiga encabezados de proxy): rechazado, y no se aprende ningún host
+      const sinLlave = await get('/v1/auth/me', { 'x-forwarded-host': 'scan-bar.malo.workers.dev', 'x-scanbar-host': 'scan-bar.malo.workers.dev' });
+      expect(sinLlave.statusCode).toBe(403);
+      expect((await get('/v1/auth/me', { 'x-scanbar-proxy': 'otra-llave' })).statusCode).toBe(403);
+      // la revisión de salud de Render sí pasa, pero sin poder imponer el host
+      expect((await get('/health', { 'x-forwarded-host': 'scan-bar.malo.workers.dev' })).statusCode).toBe(200);
+      expect(process.env.RESOLVER_HOST).toBeUndefined();
+      // por el Worker: host público aprendido e IP real para el límite de tasa
+      const firmado = { 'x-scanbar-proxy': 'llave-del-worker-de-prueba-0123456789', 'x-scanbar-host': 'scan-bar.forgex.workers.dev', 'x-scanbar-ip': '203.0.113.50' };
+      expect((await get('/health', firmado)).statusCode).toBe(200);
+      expect(process.env.RESOLVER_HOST).toBe('scan-bar.forgex.workers.dev');
+      const gtin = (await ctx.owner.query("SELECT c.gtin FROM codes c JOIN products p ON p.id=c.product_id JOIN tenants t ON t.id=p.tenant_id WHERE c.retired_at IS NULL LIMIT 1")).rows[0].gtin;
+      const qr = await get(`/v1/codes/${gtin}.svg?kind=qr`, firmado);
+      expect(qr.statusCode).toBe(200);
+      for (let i = 0; i < 125; i++) await get('/health', firmado); // misma IP real: el límite de tasa la cuenta aunque el socket sea el del proxy
+      const otraIp = await get('/v1/public/t/tienda-0003/catalog', { ...firmado, 'x-scanbar-ip': '203.0.113.51' });
+      expect(otraIp.statusCode).toBe(200);
+    } finally { await px.close(); await (px as any).db.close(); }
+  });
+
+  it('TOTP_ENC_KEY acepta 32 bytes en base64 (sin cambios) o un secreto largo generado por la plataforma', async () => {
+    const { totpKey } = await import('../apps/api/src/security');
+    const b64 = Buffer.alloc(32, 7).toString('base64');
+    expect(totpKey(b64).equals(Buffer.alloc(32, 7))).toBe(true);
+    expect(totpKey('x'.repeat(44)).length).toBe(32);
+    expect(() => totpKey('corta')).toThrow(/32/);
+  });
+});
+
+describe('sincronización sin git (por HTTP)', () => {
+  it('descarga exactamente los archivos que tomaría el clonado parcial', async () => {
+    const { matchesSparse } = await import('../apps/api/src/sync');
+    const nova = SOURCES.find(s => s.slug === 'nova-core')!.paths;
+    expect(matchesSparse('src/data/hardware.ts', nova)).toBe(true);
+    expect(matchesSparse('src/types/index.ts', nova)).toBe(true);
+    expect(matchesSparse('src/utils/hardwareSvgImages.ts', nova)).toBe(true);
+    expect(matchesSparse('src/utils/otro.ts', nova)).toBe(false);
+    expect(matchesSparse('public/videos/x.mp4', nova)).toBe(false);
+    const dulce = SOURCES.find(s => s.slug === 'dulce-encanto')!.paths;
+    expect(matchesSparse('Dulce Encanto.html', dulce)).toBe(true);
+    expect(matchesSparse('index.html', dulce)).toBe(true);
+    expect(matchesSparse('docs/index.html', dulce)).toBe(false);
+  });
+});

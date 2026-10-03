@@ -55,9 +55,10 @@ Hallazgos **no** aplicados (no se pidieron): el login responde más rápido si e
 - Revisión visual contra la sección 7 por una persona; "otra persona levanta el proyecto solo con el README".
 - `pg_dump`/`pg_restore` (no hay binarios); el respaldo probado es físico en frío.
 
-## Producción en Cloudflare: límites
-- **Una sola instancia** del contenedor (`max_instances: 1`, tipo `basic`): límites de tasa y caché de sesiones de un solo proceso. Suficiente para el proyecto; con más tráfico habría que mover los límites a la base o a Redis.
-- **Arranque en frío**: tras 20 minutos sin peticiones el contenedor se duerme; la siguiente petición tarda unos segundos (el Worker responde 503 con `Retry-After` mientras tanto). Las webs no esperan: pintan sus productos y usan su copia guardada.
-- **Requiere el plan Workers Paid** (Containers). La imagen la construye Cloudflare en el despliegue por defecto; Docker solo hace falta para publicar desde la terminal.
-- **No se publicó en una cuenta real** desde el entorno de desarrollo: se probó la imagen contra un Postgres sin superusuario, `wrangler deploy --dry-run` de los siete Workers y las webs encontrando Scan-bar en `*.workers.dev` simulado en Chromium. El primer despliegue real es el que lo confirma ([DESPLIEGUE.md](DESPLIEGUE.md)).
-- La sincronización lee la rama principal de cada web: lo que esté en otra rama no llega a Scan-bar hasta unirse.
+## Producción gratuita (servidor en la PC): límites
+- **Scan-bar solo responde mientras la PC esté encendida y el panel en "Encendido".** Las webs siguen funcionando sin él (sus propios productos); los QR muestran "Scan-bar está apagado".
+- **Una sola instancia** (la PC): límites de tasa en memoria; las sesiones viven en la base.
+- **Túnel rápido de Cloudflare** (`trycloudflare.com`): gratuito y sin cuenta, sin garantía de servicio; su dirección cambia en cada encendido y el panel se la comunica al Worker. Si se cae, el panel lo reabre.
+- **Respaldos**: la base vive en `.servidor/postgres` de la PC; respaldar = copiar `.servidor/` con el servidor apagado.
+- **No se probó aquí** el túnel real a internet ni el panel en Windows: se probaron el Worker en el runtime local de Cloudflare y el panel completo en Linux ([DESPLIEGUE.md](DESPLIEGUE.md)).
+- La sincronización lee la rama principal de cada web; sin Git usa la API de GitHub (60 consultas por hora sin token).

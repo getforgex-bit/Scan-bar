@@ -1,30 +1,21 @@
-// Scan-bar en Cloudflare: Worker (cloudflare/src/index.ts) + contenedor con la app de Node (imagen: Dockerfile).
-// Va en la raíz para el despliegue por defecto de Cloudflare (Import a repository: sin build command, `npx wrangler deploy`,
-// raíz /), que construye la imagen en la nube. Requisitos: plan Workers Paid (Containers) y un PostgreSQL administrado
-// (Neon) en el secreto DATABASE_URL. Pasos completos: docs/DESPLIEGUE.md.
+// Scan-bar en Cloudflare, plan gratuito: un Worker (cloudflare/src/index.ts) que da la dirección fija
+// https://scan-bar.<tu-cuenta>.workers.dev y pasa cada petición al servidor que corre en tu PC (panel: npm run servidor),
+// a través de un túnel gratuito de Cloudflare. Va en la raíz para el despliegue por defecto (Import a repository).
+// Único secreto: SCANBAR_PROXY_KEY (la llave que muestra el panel). Ver docs/DESPLIEGUE.md.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "scan-bar",
   "main": "cloudflare/src/index.ts",
   "compatibility_date": "2026-09-01",
-  "containers": [
-    {
-      "class_name": "ScanbarContainer",
-      "image": "./Dockerfile",
-      "image_build_context": ".",
-      // Una instancia: sesiones en caché y límites de tasa de un solo proceso (las sesiones viven en la base).
-      "max_instances": 1,
-      // 1/4 vCPU, 1 GiB de memoria, 4 GB de disco
-      "instance_type": "basic"
-    }
-  ],
+  "keep_vars": true,
+  // Dirección actual del servidor (la del túnel): Durable Object con almacenamiento SQLite, incluido en el plan gratuito.
   "durable_objects": {
-    "bindings": [{ "name": "SCANBAR", "class_name": "ScanbarContainer" }]
+    "bindings": [{ "name": "ORIGEN", "class_name": "ScanbarOrigin" }]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["ScanbarContainer"] }],
-  "vars": {
-    // Minutos entre revisiones de los repositorios de las webs (solo se sincroniza lo que cambió).
-    "SYNC_INTERVAL_MIN": "10"
-  },
+  // v1 creó la clase del contenedor de pago (Cloudflare Containers); v2 la convierte en el registro de la dirección.
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["ScanbarContainer"] },
+    { "tag": "v2", "renamed_classes": [{ "from": "ScanbarContainer", "to": "ScanbarOrigin" }] }
+  ],
   "observability": { "enabled": true }
 }
