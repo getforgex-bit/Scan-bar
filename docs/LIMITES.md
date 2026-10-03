@@ -58,6 +58,6 @@ Hallazgos **no** aplicados (no se pidieron): el login responde más rápido si e
 ## Producción en Cloudflare: límites
 - **Una sola instancia** del contenedor (`max_instances: 1`, tipo `basic`): límites de tasa y caché de sesiones de un solo proceso. Suficiente para el proyecto; con más tráfico habría que mover los límites a la base o a Redis.
 - **Arranque en frío**: tras 20 minutos sin peticiones el contenedor se duerme; la siguiente petición tarda unos segundos (el Worker responde 503 con `Retry-After` mientras tanto). Las webs no esperan: pintan sus productos y usan su copia guardada.
-- **Requiere el plan Workers Paid** (Containers) y Docker para construir la imagen (en la máquina que despliega o en GitHub Actions).
+- **Requiere el plan Workers Paid** (Containers). La imagen la construye Cloudflare en el despliegue por defecto; Docker solo hace falta para publicar desde la terminal.
 - **No se publicó en una cuenta real** desde el entorno de desarrollo: se probó la imagen contra un Postgres sin superusuario, `wrangler deploy --dry-run` de los siete Workers y las webs encontrando Scan-bar en `*.workers.dev` simulado en Chromium. El primer despliegue real es el que lo confirma ([DESPLIEGUE.md](DESPLIEGUE.md)).
 - La sincronización lee la rama principal de cada web: lo que esté en otra rama no llega a Scan-bar hasta unirse.

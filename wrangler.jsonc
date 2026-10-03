@@ -1,16 +1,17 @@
-// Scan-bar en Cloudflare: Worker + contenedor con la app de Node (imagen: ../Dockerfile).
-// Requisitos: plan Workers Paid (Containers), Docker en la máquina que despliega (o el flujo de GitHub Actions),
-// y un PostgreSQL administrado (Neon) en el secreto DATABASE_URL. Pasos completos: docs/DESPLIEGUE.md.
+// Scan-bar en Cloudflare: Worker (cloudflare/src/index.ts) + contenedor con la app de Node (imagen: Dockerfile).
+// Va en la raíz para el despliegue por defecto de Cloudflare (Import a repository: sin build command, `npx wrangler deploy`,
+// raíz /), que construye la imagen en la nube. Requisitos: plan Workers Paid (Containers) y un PostgreSQL administrado
+// (Neon) en el secreto DATABASE_URL. Pasos completos: docs/DESPLIEGUE.md.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "scan-bar",
-  "main": "src/index.ts",
+  "main": "cloudflare/src/index.ts",
   "compatibility_date": "2026-09-01",
   "containers": [
     {
       "class_name": "ScanbarContainer",
-      "image": "../Dockerfile",
-      "image_build_context": "..",
+      "image": "./Dockerfile",
+      "image_build_context": ".",
       // Una instancia: sesiones en caché y límites de tasa de un solo proceso (las sesiones viven en la base).
       "max_instances": 1,
       // 1/4 vCPU, 1 GiB de memoria, 4 GB de disco

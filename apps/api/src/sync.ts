@@ -66,7 +66,7 @@ export const SOURCES: WebSource[] = [
     },
   },
   {
-    slug: 'cafe-motz', name: 'Motz Café', companyPrefix: '0011', repo: 'Cafe-Motz', worker: 'motz-cafe', paths: ['/src/data/', '/src/types.ts'],
+    slug: 'cafe-motz', name: 'Motz Café', companyPrefix: '0011', repo: 'Cafe-Motz', worker: 'cafe-motz', paths: ['/src/data/', '/src/types.ts'],
     async extract(dir) {
       const m = await loadTs(dir, 'src/data/coffeeData.ts');
       const items: Item[] = [];

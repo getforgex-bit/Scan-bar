@@ -85,14 +85,14 @@ describe('arranque de producción', () => {
   it('la URL de cada web se deduce de la cuenta de workers.dev de Scan-bar (o de WEB_URL_<NEGOCIO>)', async () => {
     const src = SOURCES.find(s => s.slug === 'cafe-motz')!;
     expect(siteUrl(src, {})).toBeNull();
-    expect(siteUrl(src, { RESOLVER_HOST: 'scan-bar.forgex.workers.dev' })).toBe('https://motz-cafe.forgex.workers.dev/');
+    expect(siteUrl(src, { RESOLVER_HOST: 'scan-bar.forgex.workers.dev' })).toBe('https://cafe-motz.forgex.workers.dev/');
     expect(siteUrl(src, { RESOLVER_HOST: 'scan-bar.forgex.workers.dev', WEB_URL_CAFE_MOTZ: 'https://cafe.ejemplo.mx' })).toBe('https://cafe.ejemplo.mx/');
     // un negocio creado con la URL provisional de GitHub se actualiza en cuanto se conoce la real
     process.env.RESOLVER_HOST = 'scan-bar.forgex.workers.dev';
     const c = await ctx.db.adminRw.connect();
     try { await ensureTenant(c, src); } finally { c.release(); }
     const t = (await ctx.owner.query("SELECT product_url_tpl, allowed_domains FROM tenants WHERE slug='cafe-motz'")).rows[0];
-    expect(t).toEqual({ product_url_tpl: 'https://motz-cafe.forgex.workers.dev/', allowed_domains: ['motz-cafe.forgex.workers.dev'] });
+    expect(t).toEqual({ product_url_tpl: 'https://cafe-motz.forgex.workers.dev/', allowed_domains: ['cafe-motz.forgex.workers.dev'] });
     // dominio propio después: WEB_URL_<NEGOCIO> reemplaza la URL automática y conserva el dominio anterior
     process.env.WEB_URL_CAFE_MOTZ = 'https://cafe.ejemplo.mx';
     const tpl = async () => (await ctx.owner.query("SELECT product_url_tpl, allowed_domains FROM tenants WHERE slug='cafe-motz'")).rows[0];
@@ -101,7 +101,7 @@ describe('arranque de producción', () => {
       await ensure();
       const u = await tpl();
       expect(u.product_url_tpl).toBe('https://cafe.ejemplo.mx/');
-      expect([...u.allowed_domains].sort()).toEqual(['cafe.ejemplo.mx', 'motz-cafe.forgex.workers.dev']);
+      expect([...u.allowed_domains].sort()).toEqual(['cafe-motz.forgex.workers.dev', 'cafe.ejemplo.mx']);
       // una plantilla editada a mano en la consola no se sobrescribe
       await ctx.owner.query("UPDATE tenants SET product_url_tpl='https://cafe.ejemplo.mx/menu?sku={sku}' WHERE slug='cafe-motz'");
       process.env.WEB_URL_CAFE_MOTZ = 'https://otra.ejemplo.mx'; await ensure();
@@ -131,9 +131,9 @@ describe('sincronización con el rol de la consola (sin superusuario)', () => {
 describe('CORS para las webs de la misma cuenta de Cloudflare', () => {
   it('una web en *.cuenta.workers.dev puede leer el catálogo de Scan-bar en la misma cuenta; otra cuenta no', async () => {
     const pre = (origin: string) => app.inject({ method: 'OPTIONS', url: '/v1/public/t/tienda-0003/configurations', headers: { origin, host: 'scan-bar.forgex.workers.dev', 'access-control-request-method': 'POST' }, remoteAddress: ip() });
-    const ok = await pre('https://motz-cafe.forgex.workers.dev');
-    expect(ok.statusCode).toBe(204); expect(ok.headers['access-control-allow-origin']).toBe('https://motz-cafe.forgex.workers.dev');
-    expect((await pre('https://motz-cafe.otra-cuenta.workers.dev')).statusCode).toBe(403);
+    const ok = await pre('https://cafe-motz.forgex.workers.dev');
+    expect(ok.statusCode).toBe(204); expect(ok.headers['access-control-allow-origin']).toBe('https://cafe-motz.forgex.workers.dev');
+    expect((await pre('https://cafe-motz.otra-cuenta.workers.dev')).statusCode).toBe(403);
     expect((await pre('https://forgex.workers.dev.malo.com')).statusCode).toBe(403);
     expect(process.env.RESOLVER_HOST).toBe('scan-bar.forgex.workers.dev'); // aprendido de la primera petición en workers.dev
   });

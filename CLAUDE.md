@@ -20,7 +20,7 @@ Scan-bar es la base de datos única de las 6 webs (yokrem, cafe-motz, dulce-enca
 `products.origin`: `repo` (lo define el código de la web, lo mantiene `npm run sync:repos`) o `scanbar` (alta en la consola; la web lo lee de
 `GET /v1/public/t/:slug/catalog`). Variantes (talla, tamaño, gramaje) = un producto con GTIN propio (`variant_of`, `variant`). Las webs piden el
 código de una configuración con `POST /v1/public/t/:slug/configurations` (SKU + cantidad). El configurador de la PWA está oculto (`SHOW_CONFIGURATOR`, `apps/web/src/flags.ts`).
-Producción (docs/DESPLIEGUE.md): `Dockerfile` en Cloudflare Containers tras el Worker de `cloudflare/`, Postgres en Neon; `scripts/start.ts` migra, crea
+Producción (docs/DESPLIEGUE.md): `Dockerfile` en Cloudflare Containers tras el Worker de `cloudflare/src/index.ts` (`wrangler.jsonc` en la raíz: despliegue por defecto de Cloudflare), Postgres en Neon; `scripts/start.ts` migra, crea
 negocios y cuentas (`bootstrap.ts`, `ADMIN_PASSWORD`/`CAJA_PASSWORD`) y el servidor sincroniza las webs solo (`sync.ts`). En `*.<cuenta>.workers.dev` las webs
 deducen la URL de Scan-bar y Scan-bar la de cada web.
 
@@ -32,7 +32,7 @@ deducen la URL de Scan-bar y Scan-bar la de cada web.
 `npm i` · `npm run dev:db` (Postgres :5433) · `npm run migrate` · `npm run seed` · `npm start` (API :3000, sirve la PWA de `apps/web/dist`)
 · `npm run build` (PWA) · `npm run dev:web` · `npm test` (levanta su propio Postgres en un puerto aleatorio) · `npm run typecheck` · `npm run check:resolver`
 · `npm run sync:repos [-- --dry] [-- --only=slug] [-- --local=..]` (catálogo de las webs) · `npm run start:prod` (arranque de producción)
-· en `cloudflare/`: `npm run deploy`, `npm run secrets`, `npm run logs`.
+· `npm run cf:deploy` / `cf:secrets` / `cf:logs` (Cloudflare; `typecheck` incluye el Worker).
 
 ## Reglas fijas
 - Dinero en centavos enteros. IVA 16 % incluido en el precio y desglosado.

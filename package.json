@@ -11,16 +11,21 @@
     "sync:repos": "tsx scripts/sync-repos.ts",
     "dev:api": "tsx watch apps/api/src/server.ts",
     "dev:web": "vite --config apps/web/vite.config.ts",
-    "typecheck": "tsc --noEmit -p .",
+    "typecheck": "tsc --noEmit -p . && tsc --noEmit -p cloudflare",
     "check:resolver": "tsx scripts/check-resolver.ts",
     "build": "vite build apps/web --config apps/web/vite.config.ts",
     "start": "tsx apps/api/src/server.ts",
     "field-report": "tsx scripts/field-report.ts",
     "backup-test": "tsx scripts/backup-restore-test.ts",
     "gen-api-docs": "tsx scripts/gen-api-docs.ts",
-    "start:prod": "tsx scripts/start.ts"
+    "start:prod": "tsx scripts/start.ts",
+    "cf:deploy": "wrangler deploy",
+    "cf:secrets": "node cloudflare/secrets.mjs",
+    "cf:logs": "wrangler tail"
   },
   "devDependencies": {
+    "@cloudflare/containers": "^0.3.7",
+    "@cloudflare/workers-types": "^5.20261003.1",
     "@types/node": "^26.6.3",
     "@types/pg": "^8.23.1",
     "@types/react": "^19.3.0",
@@ -33,7 +38,8 @@
     "typescript": "^7.0.2",
     "vite": "^8.3.1",
     "vite-plugin-pwa": "^1.3.0",
-    "vitest": "^5.0.3"
+    "vitest": "^5.0.3",
+    "wrangler": "^4.147.0"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.2",

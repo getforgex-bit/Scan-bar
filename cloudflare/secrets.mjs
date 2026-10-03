@@ -1,5 +1,5 @@
-// Configura los secretos del Worker "scan-bar" en Cloudflare (una vez, después del primer `npm run deploy`).
-// Uso: npm run secrets   — pregunta lo que falta; también lee DATABASE_URL, ADMIN_PASSWORD y CAJA_PASSWORD del entorno.
+// Configura los secretos del Worker "scan-bar" en Cloudflare (una vez, después del primer despliegue).
+// Uso, en la raíz del repo: npm run cf:secrets   — pregunta lo que falta; también lee DATABASE_URL, ADMIN_PASSWORD y CAJA_PASSWORD del entorno.
 // Lo que ya existe en Cloudflare se conserva salvo que escribas un valor nuevo. TOTP_ENC_KEY nunca se regenera:
 // si cambiara, los SuperAdmin tendrían que volver a activar su segundo factor.
 import { execFileSync } from 'node:child_process';
@@ -14,7 +14,7 @@ const wrangler = (args, opts = {}) => execFileSync(npx, ['wrangler', ...args], {
 
 let existing = new Set();
 try { existing = new Set(JSON.parse(wrangler(['secret', 'list', '--format', 'json'], { stdio: ['ignore', 'pipe', 'ignore'] })).map(s => s.name)); }
-catch { console.log('Aún no hay secretos (o el Worker no existe: ejecuta antes `npm run deploy`).'); }
+catch { console.log('Aún no hay secretos (o el Worker no existe: despliega primero; ver docs/DESPLIEGUE.md).'); }
 
 /** Pregunta sin mostrar lo que se escribe (contraseñas y URL con contraseña). */
 function ask(question) {
@@ -78,5 +78,5 @@ if (generated.length) {
   console.log('\nContraseñas generadas (guárdalas ahora; no se vuelven a mostrar):');
   for (const g of generated) console.log(`  ${g}`);
 }
-console.log('\nListo. Si Scan-bar ya estaba en marcha, ejecuta `npm run deploy` para reiniciarlo con los secretos nuevos.');
+console.log('\nListo. Si Scan-bar ya estaba en marcha, vuelve a desplegar (Retry deployment en el panel o `npm run cf:deploy`) para reiniciarlo con los secretos nuevos.');
 console.log('Al arrancar, las cuentas toman la contraseña de estos secretos (y se cierran sus sesiones si cambió).');

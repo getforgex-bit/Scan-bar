@@ -52,9 +52,10 @@ La cámara exige HTTPS salvo en `localhost`. Para probar desde un teléfono, exp
 
 ## Producción
 
-Imagen Docker (`Dockerfile`) que corre en **Cloudflare Containers** detrás de un Worker (`cloudflare/`), con PostgreSQL en **Neon**:
-`scripts/start.ts` migra, crea los negocios y las cuentas, arranca el servidor y sincroniza las webs. Secretos con `npm run secrets` en
-`cloudflare/`; despliegue con `npm run deploy` o con GitHub Actions al llegar a `main`. Todo en [docs/DESPLIEGUE.md](docs/DESPLIEGUE.md).
+Imagen Docker (`Dockerfile`) que corre en **Cloudflare Containers** detrás de un Worker (`cloudflare/src/index.ts`, configuración en
+`wrangler.jsonc` de la raíz), con PostgreSQL en **Neon**: `scripts/start.ts` migra, crea los negocios y las cuentas, arranca el servidor y
+sincroniza las webs. Se publica con el despliegue por defecto de Cloudflare (*Import a repository*, sin cambiar nada; cada push a `main`
+vuelve a publicar) o con `npm run cf:deploy`; secretos en el panel o con `npm run cf:secrets`. Todo en [docs/DESPLIEGUE.md](docs/DESPLIEGUE.md).
 
 ## Pruebas
 
