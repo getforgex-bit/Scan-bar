@@ -23,3 +23,5 @@ Lo que se construyó coincide con `docs/arquitectura.md` salvo lo siguiente (cad
 | Fuentes | autoalojadas | `@fontsource` (woff2 dentro del bundle) | Cumple "desde el propio dominio". |
 | Tiempo real | SSE + pg_notify | igual (triggers → `NOTIFY events`) | — |
 | TOTP | obligatorio SuperAdmin | obligatorio para `/v1/admin/*`; sin TOTP solo puede activarlo | Permite el primer alta. |
+| Webs de los negocios | solo reciben redirecciones del resolver | además leen su catálogo (`/v1/public/t/:slug/catalog`) y piden códigos para sus configuraciones (`/v1/public/t/:slug/configurations`), con CORS por dominio | Integración pedida: un sistema unificado ([INTEGRACION-WEBS.md](INTEGRACION-WEBS.md)). |
+| Etiquetas | impresión del navegador (pestaña Campo) | además PDF generado en el servidor (escritor propio, sin dependencias) | Tamaño físico exacto al recortar. |

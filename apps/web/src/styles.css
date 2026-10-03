@@ -81,3 +81,4 @@ textarea { font: 13px/19px var(--font-code); width: 100%; padding: 12px; border:
 input.check { width: 20px; min-height: 20px; height: 20px; flex: none; }
 .help li { margin: 4px 0; } details summary { cursor: pointer; min-height: 44px; line-height: 44px; }
 fieldset.group td { vertical-align: middle; }
+tr.off td { color: var(--ink-muted); } .formrow input[type=number] { flex: 0 0 72px; }

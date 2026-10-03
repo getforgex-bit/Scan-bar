@@ -14,8 +14,11 @@ type Line = { gtin: string; name: string; priceCents: number; qty: number; kind:
 type Receipt = { id: number; totalCents: number; taxCents: number; items: { gtin: string; name: string; qty: number; unitPriceCents: number }[]; at: string; pending?: boolean };
 
 const isStaff = (me: Me | null) => me?.role === 'superadmin' || me?.role === 'operador_pos';
+// El configurador propio de Scan-bar queda oculto: cada negocio configura en su página web y Scan-bar
+// emite el código de esa configuración (docs/INTEGRACION-WEBS.md). Cambia a true para volver a mostrarlo.
+const SHOW_CONFIGURATOR = false;
 // Ruta pública del configurador de un negocio: /t/{slug}/configurador
-const pathTenant = () => /^\/t\/([a-z0-9-]+)\/configurador\/?$/.exec(location.pathname)?.[1];
+const pathTenant = () => (SHOW_CONFIGURATOR ? /^\/t\/([a-z0-9-]+)\/configurador\/?$/.exec(location.pathname)?.[1] : undefined);
 
 export function App() {
   // La app se usa sin iniciar sesión; undefined = cargando, null = visitante anónimo.
@@ -110,7 +113,7 @@ function Shell({ me, refresh }: { me: Me | null; refresh: () => Promise<void> })
   };
   const logout = async () => { await api('/v1/auth/logout', { method: 'POST' }); await refresh(); };
 
-  const tabs: [Tab, string, boolean][] = [['scan', 'Escáner', true], ['cfg', 'Configurador', true], ['mine', 'Mis configuraciones', !!me], ['cat', 'Catálogo', staff], ['con', 'Administración', !!admin], ['campo', 'Campo', !!admin]];
+  const tabs: [Tab, string, boolean][] = [['scan', 'Escáner', true], ['cfg', 'Configurador', SHOW_CONFIGURATOR], ['mine', 'Mis configuraciones', !!me], ['cat', 'Catálogo', staff], ['con', 'Administración', !!admin], ['campo', 'Campo', !!admin]];
 
   return (
     <>
@@ -157,7 +160,7 @@ function Shell({ me, refresh }: { me: Me | null; refresh: () => Promise<void> })
             )}
           </div>
         )}
-        {tab === 'cfg' && <Configurator me={me} initialTenant={pathTenant()} onNeedAccount={() => setAuth({ mode: 'register', note: 'Con una cuenta, tus configuraciones quedan guardadas.' })} />}
+        {tab === 'cfg' && SHOW_CONFIGURATOR && <Configurator me={me} initialTenant={pathTenant()} onNeedAccount={() => setAuth({ mode: 'register', note: 'Con una cuenta, tus configuraciones quedan guardadas.' })} />}
         {tab === 'mine' && me && <MyBuilds />}
         {tab === 'con' && admin && me && <Console me={me} refresh={refresh} />}
         {tab === 'campo' && admin && <Campo />}

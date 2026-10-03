@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, ApiError, money, fmtGtin, type Me, type Product } from './api';
 
 type Section = 'tenants' | 'cfgs' | 'products' | 'users' | 'keys' | 'db' | 'req' | 'metrics' | 'live';
-const SECTIONS: [Section, string][] = [['tenants', 'Negocios'], ['cfgs', 'Configuradores'], ['products', 'Productos'], ['users', 'Usuarios'], ['keys', 'Llaves'], ['db', 'Base de datos'], ['req', 'Depurador'], ['metrics', 'Métricas'], ['live', 'En vivo']];
+const SECTIONS: [Section, string][] = [['tenants', 'Negocios'], ['cfgs', 'Configuradores'], ['products', 'Productos y etiquetas'], ['users', 'Usuarios'], ['keys', 'Llaves'], ['db', 'Base de datos'], ['req', 'Depurador'], ['metrics', 'Métricas'], ['live', 'En vivo']];
 const msg = (e: unknown) => (e instanceof ApiError ? e.message : 'Error de red');
 
 /** Funciones de administrador: piden la contraseña (15 min de vigencia, se renueva con el uso) y exigen segundo factor. */
@@ -17,7 +17,7 @@ export function Console({ me, refresh }: { me: Me; refresh: () => Promise<void> 
         <button className="link" onClick={async () => { await api('/v1/auth/admin-lock', { method: 'POST' }); await refresh(); }}>Bloquear ahora</button>
       </nav>
       <section>
-        {sec === 'tenants' && <Tenants />}{sec === 'cfgs' && <Configurators />}{sec === 'products' && <Products tenantName={me.tenant?.name ?? ''} />}
+        {sec === 'tenants' && <Tenants />}{sec === 'cfgs' && <Configurators />}{sec === 'products' && <Products />}
         {sec === 'users' && <Users />}{sec === 'keys' && <Keys />}
         {sec === 'db' && <DbViewer />}{sec === 'req' && <Requests />}{sec === 'metrics' && <Metrics />}{sec === 'live' && <Live />}
       </section>
@@ -102,38 +102,135 @@ function Configurators() {
   </>);
 }
 
-function Products({ tenantName }: { tenantName: string }) {
-  const { data, reload } = useLoad<Product[]>('/v1/products');
-  const empty = { sku: '', name: '', category: '', price: '', stock: '100', attrs: '{}' };
-  const [f, setF] = useState(empty); const [note, setNote] = useState('');
+type AdminProduct = Product & { tenantId: number; active: boolean; origin: 'repo' | 'scanbar'; description: string; imageUrl: string | null; variantOf: string | null; variant: string | null };
+const ORIGIN_LABEL = { repo: 'código de la web', scanbar: 'Scan-bar' } as const;
+
+/** "CH, M, G" o "Chico=45, Grande=55" (precio en pesos) → variantes. */
+function parseVariants(text: string): { label: string; priceCents?: number }[] {
+  return text.split(',').map(x => x.trim()).filter(Boolean).map(x => {
+    const [label, price] = x.split('=').map(y => y.trim());
+    const cents = price ? Math.round(Number(price) * 100) : undefined;
+    if (price && !Number.isFinite(cents)) throw new Error(`Precio inválido en la variante "${label}"`);
+    return cents === undefined ? { label } : { label, priceCents: cents };
+  });
+}
+
+/** Productos de cualquier página web: lo que se agrega aquí aparece en la web del negocio y recibe su código al instante. */
+function Products() {
+  const tenants = useLoad<any[]>('/v1/admin/tenants');
+  const [tenantId, setTenantId] = useState(0);
+  const tid = tenantId || tenants.data?.[0]?.id || 0;
+  const tenant = tenants.data?.find(t => t.id === tid);
+  const [data, setData] = useState<AdminProduct[] | null>(null); const [err, setErr] = useState('');
+  const reload = useCallback(() => { if (tid) api<AdminProduct[]>(`/v1/admin/products?tenantId=${tid}`).then(setData).catch(e => setErr(msg(e))); }, [tid]);
+  useEffect(() => { setData(null); reload(); }, [reload]);
+  const empty = { sku: '', name: '', category: '', price: '', stock: '10', description: '', imageUrl: '', variants: '', attrs: '{}' };
+  const [f, setF] = useState(empty); const [note, setNote] = useState(''); const [edit, setEdit] = useState<AdminProduct | null>(null);
   const cats = [...new Set(data?.map(p => p.category) ?? [])];
   const add = async () => {
     setNote('');
-    let attrs: unknown; try { attrs = JSON.parse(f.attrs || '{}'); } catch { setNote('⚠ Los atributos deben ser JSON, por ejemplo {"lleva_leche": true}'); return; }
+    let attrs: unknown, variants: { label: string; priceCents?: number }[];
+    try { attrs = JSON.parse(f.attrs || '{}'); } catch { setNote('⚠ Los atributos deben ser JSON, por ejemplo {"color": "rojo"}'); return; }
+    try { variants = parseVariants(f.variants); } catch (e: any) { setNote('⚠ ' + e.message); return; }
     const priceCents = Math.round(Number(f.price) * 100);
     if (!Number.isFinite(priceCents) || priceCents < 0) { setNote('⚠ Precio inválido'); return; }
     try {
-      const r = await api<{ gtin: string }>('/v1/products', { method: 'POST', body: { sku: f.sku, name: f.name, category: f.category, priceCents, stock: Number(f.stock) || 0, attrs } });
-      setNote(`Creado con código ${fmtGtin(r.gtin)}`); setF({ ...empty, category: f.category }); reload();
+      const r = await api<{ created: { sku: string; gtin: string }[] }>('/v1/admin/products', { method: 'POST', body: { tenantId: tid, sku: f.sku, name: f.name, category: f.category, priceCents, stock: Number(f.stock) || 0, description: f.description, imageUrl: f.imageUrl || null, attrs, variants } });
+      setNote(`Agregado a ${tenant?.name}: ${r.created.map(c => `${c.sku} → ${fmtGtin(c.gtin)}`).join(' · ')}`); setF({ ...empty, category: f.category }); reload();
     } catch (e) { setNote('⚠ ' + msg(e)); }
   };
+  const patch = async (p: AdminProduct, body: Record<string, unknown>) => {
+    try { await api(`/v1/admin/products/${p.id}`, { method: 'PATCH', body }); setEdit(null); setNote(`Guardado: ${p.name}`); reload(); } catch (e) { setNote('⚠ ' + msg(e)); }
+  };
   return (<>
-    <h2>Productos de {tenantName}</h2>
-    <p className="label">Cada opción de un configurador es un producto: su categoría decide en qué grupo aparece y sus atributos alimentan las reglas. Precio 0 = sin costo extra.</p>
+    <h2>Productos y etiquetas</h2>
+    <p className="label">Lo que agregas aquí aparece en la página web del negocio y recibe su código EAN-13/QR al instante. Lo que viene del código de la web se cambia en su repositorio (npm run sync:repos); aquí solo se ajustan sus existencias.</p>
     <div className="formrow">
-      <input aria-label="SKU" placeholder="SKU" className="mono" value={f.sku} onChange={e => setF({ ...f, sku: e.target.value })} />
+      <label className="label" htmlFor="pr-t">Página web / negocio</label>
+      <select id="pr-t" value={tid} onChange={e => { setTenantId(Number(e.target.value)); setEdit(null); setNote(''); }}>{tenants.data?.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
+    </div>
+    {err && <p className="err">⚠ {err}</p>}
+    {tenant && <LabelsPdf tenant={tenant} categories={cats} />}
+    <h3>Agregar producto a {tenant?.name}</h3>
+    <div className="formrow">
+      <input aria-label="SKU base" placeholder="SKU (p. ej. VESTIDO-ROJO)" className="mono" value={f.sku} onChange={e => setF({ ...f, sku: e.target.value.toUpperCase() })} />
       <input aria-label="Nombre" placeholder="Nombre" value={f.name} onChange={e => setF({ ...f, name: e.target.value })} />
-      <input aria-label="Categoría" placeholder="Categoría" list="cats" value={f.category} onChange={e => setF({ ...f, category: e.target.value })} />
+      <input aria-label="Categoría" placeholder="Categoría / sección de la web" list="cats" value={f.category} onChange={e => setF({ ...f, category: e.target.value })} />
       <datalist id="cats">{cats.map(c => <option key={c} value={c} />)}</datalist>
       <input aria-label="Precio en pesos" placeholder="Precio $" inputMode="decimal" value={f.price} onChange={e => setF({ ...f, price: e.target.value })} />
-      <input aria-label="Existencias" placeholder="Stock" inputMode="numeric" value={f.stock} onChange={e => setF({ ...f, stock: e.target.value })} />
-      <input aria-label="Atributos en JSON" placeholder='Atributos {"clave": "valor"}' className="mono" value={f.attrs} onChange={e => setF({ ...f, attrs: e.target.value })} />
-      <button onClick={add} disabled={!f.sku || !f.name || !f.category || f.price === ''}>Agregar</button>
+      <input aria-label="Existencias" placeholder="Existencias" inputMode="numeric" value={f.stock} onChange={e => setF({ ...f, stock: e.target.value })} />
     </div>
+    <div className="formrow">
+      <input aria-label="Variantes" placeholder="Variantes: CH, M, G  ·  o  Chico=45, Grande=55 (opcional)" value={f.variants} onChange={e => setF({ ...f, variants: e.target.value })} />
+      <input aria-label="URL de la imagen" placeholder="Imagen https://… (opcional)" className="mono" value={f.imageUrl} onChange={e => setF({ ...f, imageUrl: e.target.value })} />
+    </div>
+    <div className="formrow">
+      <input aria-label="Descripción" placeholder="Descripción corta (opcional)" value={f.description} onChange={e => setF({ ...f, description: e.target.value })} />
+      <input aria-label="Atributos en JSON" placeholder='Atributos {"clave": "valor"}' className="mono" value={f.attrs} onChange={e => setF({ ...f, attrs: e.target.value })} />
+      <button onClick={add} disabled={!tid || !f.sku || !f.name || !f.category || f.price === ''}>Agregar y generar código</button>
+    </div>
+    <p className="label">Cada variante (talla, tamaño, gramaje) es un producto con su propio código: SKU-BASE-VARIANTE. La categoría decide en qué sección de la web aparece.</p>
     {note && <p className={note.startsWith('⚠') ? 'err' : 'label'} role="status">{note}</p>}
-    <table><thead><tr><th className="label">Categoría</th><th className="label">Producto</th><th className="label">Atributos</th><th className="label num">Stock</th><th className="label num">Precio</th></tr></thead>
-      <tbody>{data?.map(p => <tr key={p.id}><td className="label">{p.category}</td><td>{p.name}<small className="label"> {p.sku}</small></td><td className="mono wrap">{Object.keys(p.attrs).length ? JSON.stringify(p.attrs) : ''}</td><td className="num mono">{p.stock}</td><td className="num mono">{money(p.priceCents)}</td></tr>)}</tbody></table>
+    {edit && <div className="notice stack">
+      <h3>Editar {edit.sku}</h3>
+      {edit.origin === 'scanbar' && <>
+        <label className="label" htmlFor="pe-n">Nombre</label><input id="pe-n" value={edit.name} onChange={e => setEdit({ ...edit, name: e.target.value })} />
+        <label className="label" htmlFor="pe-p">Precio en pesos</label><input id="pe-p" inputMode="decimal" value={edit.priceCents / 100} onChange={e => setEdit({ ...edit, priceCents: Math.round(Number(e.target.value) * 100) })} />
+        <label className="label" htmlFor="pe-d">Descripción</label><input id="pe-d" value={edit.description} onChange={e => setEdit({ ...edit, description: e.target.value })} />
+        <label className="label" htmlFor="pe-i">Imagen</label><input id="pe-i" className="mono" value={edit.imageUrl ?? ''} onChange={e => setEdit({ ...edit, imageUrl: e.target.value })} /></>}
+      <label className="label" htmlFor="pe-s">Existencias</label><input id="pe-s" inputMode="numeric" value={edit.stock} onChange={e => setEdit({ ...edit, stock: Number(e.target.value.replace(/\D/g, '')) || 0 })} />
+      <div className="row gap">
+        <button onClick={() => patch(edit, edit.origin === 'scanbar' ? { name: edit.name, priceCents: edit.priceCents, description: edit.description, imageUrl: edit.imageUrl || null, stock: edit.stock } : { stock: edit.stock })}>Guardar</button>
+        <button className="secondary" onClick={() => setEdit(null)}>Cancelar</button></div>
+    </div>}
+    <table><thead><tr><th className="label">Producto</th><th className="label">Categoría</th><th className="label">Origen</th><th className="label">Código</th><th className="label num">Stock</th><th className="label num">Precio</th><th><span className="sr">Acciones</span></th></tr></thead>
+      <tbody>{data?.map(p => <tr key={p.id} className={p.active ? '' : 'off'}>
+        <td>{p.name}<small className="label"> {p.sku}{p.active ? '' : ' · retirado'}</small></td><td className="label">{p.category}</td>
+        <td><span className={'pill ' + (p.origin === 'scanbar' ? 'ok' : 'degraded')}>{ORIGIN_LABEL[p.origin]}</span></td>
+        <td className="mono">{p.gtin ? fmtGtin(p.gtin) : '—'}</td><td className="num mono">{p.stock}</td><td className="num mono">{money(p.priceCents)}</td>
+        <td className="row gap">
+          <button className="secondary" onClick={() => setEdit({ ...p })}>{p.origin === 'scanbar' ? 'Editar' : 'Existencias'}</button>
+          {p.origin === 'scanbar' && <button className="secondary" onClick={() => patch(p, { active: !p.active })}>{p.active ? 'Retirar' : 'Reactivar'}</button>}
+        </td></tr>)}</tbody></table>
+    {data && data.length === 0 && <p className="label">Este negocio aún no tiene productos.</p>}
   </>);
+}
+
+/** Descarga la hoja de etiquetas (PDF) para recortar y pegar: nombre encima de cada código. */
+function LabelsPdf({ tenant, categories }: { tenant: { id: number; slug: string; name: string }; categories: string[] }) {
+  const [o, setO] = useState({ paper: 'letter', qr: false, copies: 1, scale: 100, category: '' });
+  const [busy, setBusy] = useState(false); const [note, setNote] = useState('');
+  const download = async () => {
+    setBusy(true); setNote('');
+    const q = new URLSearchParams({ paper: o.paper, qr: o.qr ? '1' : '0', copies: String(o.copies), scale: String(o.scale), ...(o.category ? { category: o.category } : {}) });
+    try {
+      const res = await fetch(`/v1/admin/tenants/${tenant.id}/labels.pdf?${q}`, { credentials: 'same-origin', headers: { 'X-Requested-With': 'pwa' } });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        if (res.status === 403 && body?.error === 'admin_locked') window.dispatchEvent(new Event('admin-locked'));
+        throw new ApiError(res.status, body);
+      }
+      const url = URL.createObjectURL(await res.blob());
+      const a = document.createElement('a'); a.href = url; a.download = `etiquetas-${tenant.slug}.pdf`; a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      setNote('PDF listo. Imprime al 100 % ("tamaño real"), recorta por las guías y pega cada etiqueta en su producto.');
+    } catch (e) { setNote('⚠ ' + msg(e)); } finally { setBusy(false); }
+  };
+  return (
+    <div className="notice stack">
+      <h3>Etiquetas en PDF · {tenant.name}</h3>
+      <p className="label">Todos los productos activos con su código; el nombre va encima de cada uno.</p>
+      <div className="formrow">
+        <select aria-label="Papel" value={o.paper} onChange={e => setO({ ...o, paper: e.target.value })}><option value="letter">Carta</option><option value="a4">A4</option></select>
+        <select aria-label="Categoría" value={o.category} onChange={e => setO({ ...o, category: e.target.value })}><option value="">Todas las categorías</option>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select>
+        <select aria-label="Tamaño del código" value={o.scale} onChange={e => setO({ ...o, scale: Number(e.target.value) })}><option value={100}>Código al 100 %</option><option value={80}>Código al 80 %</option></select>
+        <label className="row gap label" htmlFor="lb-c">Copias<input id="lb-c" type="number" min={1} max={50} value={o.copies} onChange={e => setO({ ...o, copies: Math.min(50, Math.max(1, Number(e.target.value) || 1)) })} /></label>
+        <label className="row gap"><input type="checkbox" className="check" checked={o.qr} onChange={e => setO({ ...o, qr: e.target.checked })} /> Incluir QR</label>
+        <button onClick={download} disabled={busy}>{busy ? 'Generando…' : 'Descargar PDF'}</button>
+      </div>
+      {note && <p className={note.startsWith('⚠') ? 'err' : 'label'} role="status">{note}</p>}
+    </div>
+  );
 }
 
 function TotpSetup({ onDone }: { onDone: () => void }) {

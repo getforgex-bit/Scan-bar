@@ -14,7 +14,7 @@ export function MyBuilds() {
       <section>
         <h2>Mis configuraciones</h2>
         {err && <p className="err" role="alert">⚠ {err}</p>}
-        {list && list.length === 0 && <p className="label">Aún no guardas nada. Ve a Configurador, arma algo y pulsa “Guardar y generar código”.</p>}
+        {list && list.length === 0 && <p className="label">Aún no tienes configuraciones guardadas. Las bebidas, ensambles y pedidos se arman en la página de cada negocio; ahí recibes su código.</p>}
         {list && list.length > 0 && (
           <table><thead><tr><th className="label">Qué</th><th className="label">Negocio</th><th className="label">Código</th><th className="label num">Total</th></tr></thead>
             <tbody>{list.map(s => (

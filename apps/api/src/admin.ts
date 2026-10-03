@@ -9,12 +9,13 @@ import { withTenant, type Db } from './db';
 import { sha256 } from './totp';
 import { parseDefinition } from './builds';
 import { ADMIN_UNLOCK_MS, type Session } from './session';
+import { registerCatalogAdmin } from './catalog';
 
 export type { Session };
 
 // ---- lista blanca del visor: vistas y columnas filtrables. Nunca SQL libre. ----
 export const VIEWS: Record<string, string[]> = {
-  v_products: ['id', 'tenant_id', 'sku', 'name', 'category', 'price_cents', 'stock', 'active'],
+  v_products: ['id', 'tenant_id', 'sku', 'name', 'category', 'price_cents', 'stock', 'active', 'origin'],
   v_codes: ['gtin', 'tenant_id', 'kind', 'product_id', 'build_id', 'issued_at', 'retired_at'],
   v_builds: ['id', 'tenant_id', 'total_cents', 'active', 'created_at'],
   v_sales: ['id', 'tenant_id', 'total_cents', 'tax_cents', 'payment_method', 'created_at'],
@@ -181,6 +182,9 @@ export function registerAdmin(app: FastifyInstance, db: Db, opts: { timers: bool
     await audit(S(req)!, r.rows[0].tenant_id, 'key.deactivated', { id, active: true }, { id, active: false });
     return { ok: true };
   });
+
+  // ----- productos de todas las webs y hoja de etiquetas en PDF -----
+  registerCatalogAdmin(app, db, { admin, audit });
 
   // ----- configuradores: las reglas son datos y se editan sin desplegar -----
   const cfgCols = 'c.id::int AS id, c.tenant_id, t.slug AS tenant_slug, t.name AS tenant_name, c.slug, c.name, c.description, c.definition, c.active';

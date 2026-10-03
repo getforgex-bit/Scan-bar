@@ -36,13 +36,34 @@ export function parseDefinition(input: unknown): Definition {
   return d;
 }
 
-export function bomHash(tenantId: number, lines: { productId: number; qty: number; unitPriceCents: number }[]): string {
+/** `tag` distingue configuraciones de una web con la misma lista pero distinta etiqueta (Bebida vs. Pedido); sin tag el hash no cambia. */
+export function bomHash(tenantId: number, lines: { productId: number; qty: number; unitPriceCents: number }[], tag?: string): string {
   const canonical = [...lines].sort((a, b) => a.productId - b.productId).map(l => `${l.productId}:${l.qty}:${l.unitPriceCents}`).join('|');
-  return crypto.createHash('sha256').update(`${tenantId}#${canonical}`).digest('hex');
+  return crypto.createHash('sha256').update(`${tenantId}#${canonical}${tag ? `#${tag}` : ''}`).digest('hex');
+}
+
+export type BuildLine = { productId: number; qty: number; unitPriceCents: number };
+/**
+ * Emite (o reutiliza) el código de un artículo configurado dentro de la transacción del llamador:
+ * contenido con precios congelados → hash → GTIN determinista. Lo usan el configurador y las configuraciones de las webs.
+ */
+export async function issueBuild(tx: Tx, tenantId: number, bl: BuildLine[], meta: { configuratorId: number | null; label: string | null; userId: number | null; audit: Record<string, unknown> }) {
+  const hash = bomHash(tenantId, bl, meta.configuratorId ? undefined : meta.label ?? undefined);
+  const ex = (await tx.query('SELECT id FROM builds WHERE tenant_id=$1 AND bom_hash=$2', [tenantId, hash])).rows[0];
+  if (ex) return { buildId: Number(ex.id), reused: true };
+  const t = (await tx.query('SELECT gs1_prefix, company_prefix FROM tenants WHERE id=$1', [tenantId])).rows[0];
+  const item = (await tx.query('SELECT allocate_item($1::smallint) AS n', [tenantId])).rows[0].n as number;
+  const gtin = buildGtin13(t.gs1_prefix, t.company_prefix, item);
+  const total = bl.reduce((a, l) => a + l.qty * l.unitPriceCents, 0);
+  const b = (await tx.query('INSERT INTO builds (tenant_id,bom_hash,total_cents,configurator_id,label) VALUES ($1,$2,$3,$4,$5) RETURNING id', [tenantId, hash, total, meta.configuratorId, meta.label])).rows[0];
+  for (const l of bl) await tx.query('INSERT INTO build_items (build_id,product_id,tenant_id,qty,unit_price_cents) VALUES ($1,$2,$3,$4,$5)', [b.id, l.productId, tenantId, l.qty, l.unitPriceCents]);
+  await tx.query("INSERT INTO codes (gtin,tenant_id,kind,build_id) VALUES ($1,$2,'build',$3)", [gtin, tenantId, b.id]);
+  await tx.query('INSERT INTO audit_log (tenant_id,user_id,action,after) VALUES ($1,$2,$3,$4)', [tenantId, meta.userId, 'build.created', JSON.stringify({ buildId: Number(b.id), gtin, ...meta.audit })]);
+  return { buildId: Number(b.id), reused: false };
 }
 
 type Cfg = { id: number; slug: string; name: string; description: string; definition: Definition };
-async function getConfigurator(tx: Tx, slug?: string): Promise<Cfg> {
+export async function getConfigurator(tx: Tx, slug?: string): Promise<Cfg> {
   const r = slug
     ? (await tx.query('SELECT id, slug, name, description, definition FROM configurators WHERE slug=$1 AND active', [slug])).rows[0]
     : (await tx.query('SELECT id, slug, name, description, definition FROM configurators WHERE active ORDER BY id LIMIT 1')).rows[0];
@@ -65,9 +86,7 @@ export async function saveBuild(tx: Tx, tenantId: number, input: z.infer<typeof 
   if (parts.length !== ids.length) throw new HttpError(422, 'producto_invalido', 'Alguna opción no existe, está inactiva o es de otra empresa');
   const viol = evaluate(def, parts.map(p => ({ id: Number(p.id), category: p.category, attrs: p.attrs, name: p.name, qty: merged.get(Number(p.id)) })));
   if (viol.length) throw new HttpError(422, 'incompatible', viol[0].message, viol);
-  const t = (await tx.query('SELECT gs1_prefix, company_prefix FROM tenants WHERE id=$1', [tenantId])).rows[0];
   const bl = parts.map(p => ({ productId: Number(p.id), qty: merged.get(Number(p.id))!, unitPriceCents: p.price_cents as number }));
-  const hash = bomHash(tenantId, bl);
   const order = (c: string) => { const i = def.groups.findIndex(g => g.category === c); return i < 0 ? 999 : i; };
 
   const present = async (buildId: number, reused: boolean) => {
@@ -79,16 +98,8 @@ export async function saveBuild(tx: Tx, tenantId: number, input: z.infer<typeof 
     return { gtin: g, label: def.itemLabel, name: `${def.itemLabel} ${g}`, configurator: cfg.slug, digitalLink: digitalLink(g), reused, saved: !!userId, totalCents: total, bom, svg: { ean13: gtinSvg(g, 'ean13'), qr: gtinSvg(g, 'qr') } };
   };
 
-  const ex = (await tx.query('SELECT id FROM builds WHERE tenant_id=$1 AND bom_hash=$2', [tenantId, hash])).rows[0];
-  if (ex) return present(Number(ex.id), true);
-  const item = (await tx.query('SELECT allocate_item($1::smallint) AS n', [tenantId])).rows[0].n as number;
-  const gtin = buildGtin13(t.gs1_prefix, t.company_prefix, item);
-  const total = bl.reduce((a, l) => a + l.qty * l.unitPriceCents, 0);
-  const b = (await tx.query('INSERT INTO builds (tenant_id,bom_hash,total_cents,configurator_id) VALUES ($1,$2,$3,$4) RETURNING id', [tenantId, hash, total, cfg.id])).rows[0];
-  for (const l of bl) await tx.query('INSERT INTO build_items (build_id,product_id,tenant_id,qty,unit_price_cents) VALUES ($1,$2,$3,$4,$5)', [b.id, l.productId, tenantId, l.qty, l.unitPriceCents]);
-  await tx.query("INSERT INTO codes (gtin,tenant_id,kind,build_id) VALUES ($1,$2,'build',$3)", [gtin, tenantId, b.id]);
-  await tx.query('INSERT INTO audit_log (tenant_id,user_id,action,after) VALUES ($1,$2,$3,$4)', [tenantId, userId, 'build.created', JSON.stringify({ buildId: Number(b.id), gtin, configurator: cfg.slug })]);
-  return present(Number(b.id), false);
+  const r = await issueBuild(tx, tenantId, bl, { configuratorId: cfg.id, label: null, userId, audit: { configurator: cfg.slug } });
+  return present(r.buildId, r.reused);
 }
 
 type Guard = (req: FastifyRequest) => Promise<void>;

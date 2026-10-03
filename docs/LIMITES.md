@@ -1,6 +1,6 @@
 # Límites del prototipo y desviaciones respecto al plan
 
-Estado: fases F0–F4 del plan implementadas, más tres cambios pedidos después (uso sin sesión con registro, contraseña de administrador y configurador genérico). Lo que no está aquí no se hizo.
+Estado: fases F0–F4 del plan implementadas, más los cambios pedidos después (uso sin sesión con registro, contraseña de administrador, configurador genérico e integración con las seis páginas web: [INTEGRACION-WEBS.md](INTEGRACION-WEBS.md)). Lo que no está aquí no se hizo.
 
 ## Desviaciones del plan (y motivo)
 | Plan | Prototipo | Motivo |
@@ -13,6 +13,8 @@ Estado: fases F0–F4 del plan implementadas, más tres cambios pedidos después
 | k6 | `scripts/load-builds.ts` (Node) | k6 no instalado; mismo perfil de carga. |
 | Login obligatorio (sección 8) | **Sesión opcional**: visitante anónimo, cliente registrado, operador, SuperAdmin | Pedido expreso. La matriz de permisos se conserva: lo público sigue siendo resolver + configurador (con límite de tasa); precio por GTIN (`/v1/scan`) y ventas siguen exigiendo personal. |
 | Configurador de PC con reglas fijas | Configuradores **genéricos por negocio** (tabla `configurators`, reglas como datos) | Pedido expreso; cumple además "las reglas son datos (JSON por tenant)" de la sección 5. |
+| Configurador visible en la PWA | **Oculto**; las configuraciones se arman en la web de cada negocio y Scan-bar emite su código (`POST /v1/public/t/:slug/configurations`) | Pedido expreso. El motor de reglas sigue disponible (opcional por petición). |
+| Catálogo solo desde la consola o CSV | Catálogo de las webs desde su código (`sync:repos`, origen `repo`) + altas en la consola que la web lee por API (origen `scanbar`) | Pedido expreso: agregar productos a cada página y que se registren con su código. |
 
 ## Decisiones tomadas al quitar el login obligatorio (revísalas)
 - **Registrarse crea una cuenta de cliente, sin permisos de personal.** No da acceso a Caja ni a Administración de ningún negocio; eso lo asigna un SuperAdmin en *Administración → Usuarios*. No existe (todavía) el alta de un negocio nuevo por autoservicio.
@@ -30,11 +32,19 @@ Estado: fases F0–F4 del plan implementadas, más tres cambios pedidos después
 
 Hallazgos **no** aplicados (no se pidieron): el login responde más rápido si el usuario no existe (enumeración de cuentas, que el registro también permite con su 409); la `Idempotency-Key` no caduca a las 24 h; sesiones y límites de tasa viven en memoria (se reinician con el proceso y no sirven con varios procesos).
 
+## Integración con las webs: límites
+- Las webs estáticas usan la última copia guardada del catálogo y la refrescan para la siguiente visita: un alta o retiro se ve a la siguiente carga.
+- Sin `configurator`, Scan-bar no aplica reglas de compatibilidad a lo que llega de una web (las valida la web); solo existencia, negocio y estado de cada SKU.
+- Las configuraciones de las webs no se guardan en *Mis configuraciones* (no hay cookie entre sitios).
+- Las webs aún no abren un producto concreto desde la URL del resolver: la plantilla apunta a su página principal.
+- Biker Lifestyle tiene CSP estricta: hay que agregar el origen de Scan-bar (`connect-src`) y el host de las imágenes (`img-src`) al publicar.
+- El pastel personalizado de Dulce Encanto se sigue cotizando por WhatsApp (sin precio fijo no hay código).
+
 ## No implementado todavía
 - Llaves de integración: sin CORS por dominio del tenant (solo `x-api-key`).
 - Las alertas no envían correo. Métricas/alertas cada 60 s y monitor de enlaces cada 6 h con `setInterval`, no `node-cron`.
 - `scan_events` sin particionar; sin verificación contra listas reales de contraseñas filtradas (solo una lista corta de triviales).
-- Editor de configuradores: es un área de texto JSON validada, no un editor visual. Sin editar ni desactivar productos desde la interfaz (solo alta e importación CSV).
+- Editor de configuradores: es un área de texto JSON validada, no un editor visual.
 - Tipos de regla: `equals`, `in`, `sum_lte`, `forbid`, `require`. No hay precios condicionales (p. ej. "la leche vegetal cuesta más solo en tamaño grande") ni límites entre grupos.
 - Detrás de un proxy hay que definir `TRUST_PROXY=1` para que el límite de tasa y la cookie `Secure` vean la IP y el host reales.
 - Prefijo GS1 `750` es de entorno académico; para circular en comercio abierto se requiere licencia GS1 México o el rango 20–29.

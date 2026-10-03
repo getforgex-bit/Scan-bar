@@ -22,6 +22,12 @@ npm run build && npm start
 - *Administración* pide la contraseña de la cuenta (vigencia de 15 min, se renueva con el uso; "Bloquear ahora" la cierra) y segundo factor TOTP.
 - **Nuevo configurador para un negocio**: 1) *Administración → Productos*: da de alta las opciones (la categoría decide el grupo; los atributos alimentan las reglas; precio 0 = sin costo). 2) *Administración → Configuradores → Nuevo*: define grupos y reglas. El cambio es inmediato para los clientes y queda en `audit_log`.
 
+## Productos de las webs y etiquetas
+- **Catálogo del código de cada web**: `npm run sync:repos` (clona las 6 webs de GitHub; `-- --local=..` las lee de una carpeta; `-- --dry` solo muestra). Idempotente: crea lo nuevo con su GTIN, actualiza lo cambiado y retira lo que ya no está. No toca lo agregado desde la consola.
+- **Agregar un producto a una web**: *Administración → Productos y etiquetas* → web → datos y variantes. Retirar/reactivar desde la misma tabla (el código nunca se borra).
+- **Hoja de etiquetas**: misma sección → *Descargar PDF*. Imprimir con "tamaño real" (100 %), recortar por las guías, pegar. Para frascos o piezas chicas, código al 80 %.
+- **Conectar una web**: dominio en *Negocios → Dominios permitidos*; URL de Scan-bar en la web (`data-url` del script o `VITE_SCANBAR_URL`). Detalle en [INTEGRACION-WEBS.md](INTEGRACION-WEBS.md).
+
 ## Respaldos y restauración
 - Con Postgres administrado: respaldo diario con retención de 7 días del proveedor, y `pg_dump`/`pg_restore` para restaurar (**no verificado** aquí: no hay `pg_dump` en el entorno).
 - Verificado: `npm run backup-test` hace un respaldo físico en frío de una instancia sembrada, destruye datos en el original, levanta la copia y compara conteos (9 negocios, 71 productos, 71 códigos, 18 usuarios). Ver `docs/ACEPTACION.md`.

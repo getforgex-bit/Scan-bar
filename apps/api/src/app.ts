@@ -14,23 +14,17 @@ import { buildGtin13, isValidGtin13, parseDigitalLink } from '../../../packages/
 import { HttpError } from './errors';
 import { registerAdmin, redactHeaders, redactQuery } from './admin';
 import { registerBuilds, bomHash } from './builds';
+import { registerWeb } from './web';
+import { issueProductCode } from './catalog';
 import { newSecret, verifyTotp, otpauthUri, sha256 } from './totp';
 import { securityHeaders, rateLimiter, isLocalHost, encryptSecret, decryptSecret, passwordProblem, PAGE_CSP } from './security';
 import { STAFF, ADMIN_UNLOCK_MS, type Role, type Session } from './session';
-export { HttpError, bomHash };
+export { HttpError, bomHash, issueProductCode };
 
 declare module 'fastify' { interface FastifyRequest { session?: Session } }
 
 const esc = (s: unknown) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 const money = (c: number) => `$${(c / 100).toLocaleString('es-MX', { minimumFractionDigits: 2 })}`;
-
-export async function issueProductCode(tx: Tx, tenantId: number, productId: number): Promise<string> {
-  const t = (await tx.query('SELECT gs1_prefix, company_prefix FROM tenants WHERE id=$1', [tenantId])).rows[0];
-  const item = (await tx.query('SELECT allocate_item($1::smallint) AS n', [tenantId])).rows[0].n as number;
-  const gtin = buildGtin13(t.gs1_prefix, t.company_prefix, item);
-  await tx.query("INSERT INTO codes (gtin, tenant_id, kind, product_id) VALUES ($1,$2,'product',$3)", [gtin, tenantId, productId]);
-  return gtin;
-}
 
 const audit = (tx: Tx, tenantId: number | null, userId: number | null, action: string, before: unknown, after: unknown) =>
   tx.query('INSERT INTO audit_log (tenant_id,user_id,action,before,after) VALUES ($1,$2,$3,$4,$5)', [tenantId, userId, action, before ? JSON.stringify(before) : null, after ? JSON.stringify(after) : null]);
@@ -311,7 +305,8 @@ export async function buildApp(opts: AppOpts = {}): Promise<FastifyInstance & { 
     const m = /^(\d{13})\.svg$/.exec(file);
     if (!m || !isValidGtin13(m[1])) throw new HttpError(422, 'gtin_invalido');
     const kind = (req.query as any).kind === 'qr' ? 'qr' : 'ean13';
-    return reply.header('Content-Type', 'image/svg+xml').header('Cache-Control', 'public, max-age=31536000, immutable').send(gtinSvg(m[1], kind));
+    // Público e inmutable: las webs de los negocios lo muestran en <img> o lo descargan (CORS abierto, sin credenciales).
+    return reply.header('Content-Type', 'image/svg+xml').header('Cache-Control', 'public, max-age=31536000, immutable').header('Access-Control-Allow-Origin', '*').send(gtinSvg(m[1], kind));
   });
 
   // ---- resolver público (con límite de tasa) ----
@@ -346,7 +341,7 @@ export async function buildApp(opts: AppOpts = {}): Promise<FastifyInstance & { 
 
   // ---- escaneo ----
   const buildLabel = async (tx: Tx, buildId: number) => (await tx.query(
-    `SELECT b.total_cents, coalesce(cf.definition->>'itemLabel', 'Ensamble') AS label FROM builds b LEFT JOIN configurators cf ON cf.id=b.configurator_id WHERE b.id=$1`, [buildId])).rows[0] as { total_cents: number; label: string };
+    `SELECT b.total_cents, coalesce(b.label, cf.definition->>'itemLabel', 'Ensamble') AS label FROM builds b LEFT JOIN configurators cf ON cf.id=b.configurator_id WHERE b.id=$1`, [buildId])).rows[0] as { total_cents: number; label: string };
 
   app.get('/v1/scan/:gtin', { preHandler: auth() }, async req => {
     const { gtin } = req.params as { gtin: string };
@@ -431,6 +426,7 @@ export async function buildApp(opts: AppOpts = {}): Promise<FastifyInstance & { 
   });
 
   registerBuilds(app, db, { staff: auth(), anyUser, limit });
+  registerWeb(app, db, { limit });
   registerAdmin(app, db, { timers: opts.timers !== false && opts.logRequests !== false });
 
   // ---- PWA estática ----

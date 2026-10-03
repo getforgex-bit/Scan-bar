@@ -1,8 +1,9 @@
 # Sistema Universal de Códigos — prototipo
 
-Resolver central de códigos EAN-13 / QR (GS1 Digital Link) para varios negocios, con escáner PWA, mini POS y un **configurador genérico**
-(PC a medida, bebidas de cafetería o lo que cada negocio defina) que emite un código por cada configuración guardada.
-Diseño: [docs/arquitectura.md](docs/arquitectura.md). Límites y desviaciones: [docs/LIMITES.md](docs/LIMITES.md). Mediciones: [docs/mediciones.md](docs/mediciones.md).
+Resolver central de códigos EAN-13 / QR (GS1 Digital Link) para varios negocios, con escáner PWA y mini POS. Es la base de datos única de las
+seis páginas web de los negocios: los productos que se agregan aquí aparecen en su web con su código, las configuraciones que el cliente arma
+en la web (bebida, ensamble de PC) reciben su código aquí, y cada web se imprime en una hoja de etiquetas PDF.
+Diseño: [docs/arquitectura.md](docs/arquitectura.md). Integración con las webs: [docs/INTEGRACION-WEBS.md](docs/INTEGRACION-WEBS.md). Límites y desviaciones: [docs/LIMITES.md](docs/LIMITES.md). Mediciones: [docs/mediciones.md](docs/mediciones.md).
 
 ## Levantarlo (Windows/macOS/Linux, solo Node ≥ 22)
 
@@ -11,15 +12,17 @@ npm i
 npm run dev:db      # Postgres embebido en :5433 (déjalo corriendo en otra terminal)
 npm run migrate     # esquema + contraseñas de los roles de base (en desarrollo se generan en .env)
 npm run seed        # 9 negocios de ejemplo; genera .dev-credentials.txt si no defines SEED_*_PASSWORD
+npm run sync:repos  # las 6 webs reales desde GitHub (o -- --local=.. si las tienes clonadas al lado)
 npm run build && npm start        # API + PWA en http://localhost:3000
 ```
 
-La app **se usa sin iniciar sesión**: cualquiera puede escanear (modo Navegación) y usar el configurador de un negocio
-(también en `/t/<slug>/configurador`, p. ej. `/t/tienda-0003/configurador`). Iniciar sesión es opcional:
+La app **se usa sin iniciar sesión**: cualquiera puede escanear (modo Navegación). El configurador propio de Scan-bar está **oculto**: cada
+negocio configura en su página web y Scan-bar emite el código de esa configuración (ver [docs/INTEGRACION-WEBS.md](docs/INTEGRACION-WEBS.md);
+`SHOW_CONFIGURATOR` en `apps/web/src/App.tsx` lo vuelve a mostrar). Iniciar sesión es opcional:
 
 | Quién | Cómo entra | Qué añade |
 |---|---|---|
-| Visitante | sin cuenta | escanear, configurar y obtener el código |
+| Visitante | sin cuenta | escanear y abrir la página del producto |
 | Cliente | **Registrarse** (correo + contraseña ≥ 12) | sus configuraciones quedan en *Mis configuraciones* |
 | Operador | `caja1..9@ejemplo.mx` | modo Caja (mini POS) y catálogo de su negocio |
 | SuperAdmin | `admin1..9@ejemplo.mx` | *Administración*: pide **contraseña** (se bloquea a los 15 min sin uso) y segundo factor (TOTP) |
@@ -27,8 +30,10 @@ La app **se usa sin iniciar sesión**: cualquiera puede escanear (modo Navegaci�
 Contraseñas de la semilla en `.dev-credentials.txt` (o `SEED_ADMIN_PASSWORD` / `SEED_POS_PASSWORD`). Registrarse nunca da permisos de personal:
 esos los asigna un administrador en *Administración → Usuarios*.
 
-Negocios de ejemplo con configurador: `tienda-0002` (Cómputo Nova, PC a medida) y `tienda-0003` (Café Origen: bebida, tamaño, leche, endulzante, extras).
-Para otro negocio: *Administración → Productos* (opciones con categoría y atributos) y *Administración → Configuradores* (grupos y reglas en JSON, sin desplegar).
+**Agregar un producto a una web**: *Administración → Productos y etiquetas* → elige la web → nombre, categoría (la sección de la web), precio y,
+si aplica, variantes (`CH, M, G` o `Chico=45, Grande=55`): cada variante recibe su GTIN al instante y la web la muestra en su siguiente carga.
+**Etiquetas**: en la misma sección, *Descargar PDF* (carta o A4, QR opcional, copias): nombre encima de cada código, con guías de corte.
+Negocios de ejemplo con configurador (motor de reglas, sigue disponible por API): `tienda-0002` (PC a medida) y `tienda-0003` (bebidas).
 
 La cámara exige HTTPS salvo en `localhost`. Para probar desde un teléfono, expón la app con un túnel HTTPS.
 
@@ -38,13 +43,15 @@ La cámara exige HTTPS salvo en `localhost`. Para probar desde un teléfono, exp
 - **Cuentas**: Argon2id, cookie HttpOnly/SameSite=Lax/Secure (salvo localhost), bloqueo tras 5 intentos, registro de clientes, contraseña + TOTP (cifrado en reposo) para administración.
 - **Seguridad**: CSP sin scripts ni estilos en línea, HSTS, X-Frame-Options, límite de tasa por IP en todo lo público.
 - **PWA**: lector con BarcodeDetector nativo o Wasm autoalojado, consenso de 2 lecturas, antirrebote, captura manual; modos Navegación/Caja; ventas idempotentes con cola sin red; ticket de 80 mm.
-- **Configurador genérico**: grupos y reglas como datos por negocio (`equals`, `in`, `sum_lte`, `forbid`, `require`), evaluados igual en cliente y servidor; contenido con precio congelado; GTIN determinista por hash.
-- **Administración**: negocios, configuradores, productos, usuarios, llaves, visor de BD, depurador, métricas, alertas y eventos en vivo.
+- **Integración con las webs**: catálogo público por negocio (`GET /v1/public/t/:slug/catalog`), códigos para configuraciones hechas en la web (`POST /v1/public/t/:slug/configurations`), CORS por dominio del negocio, sincronización de los repos con origen (`repo`/`scanbar`) y variantes con GTIN propio.
+- **Etiquetas en PDF** sin dependencias (`apps/api/src/pdf.ts`, `labels.ts`): mismos trazos de bwip-js que el SVG; verificadas decodificándolas con ZXing.
+- **Configurador genérico** (oculto en la PWA): grupos y reglas como datos por negocio (`equals`, `in`, `sum_lte`, `forbid`, `require`), evaluados igual en cliente y servidor; contenido con precio congelado; GTIN determinista por hash.
+- **Administración**: negocios, configuradores, productos de todas las webs y etiquetas, usuarios, llaves, visor de BD, depurador, métricas, alertas y eventos en vivo.
 
 ## Pruebas
 
 ```bash
-npm test            # 66 pruebas: GTIN, motor de reglas, RLS, API, ventas, configuradores, uso sin sesión, registro, seguridad, consola, TOTP, alertas, SSE
+npm test            # 82 pruebas: GTIN, motor de reglas, RLS, API, ventas, configuradores, uso sin sesión, registro, seguridad, consola, TOTP, alertas, SSE, integración con las webs y PDF
 npm run typecheck
 npm run check:resolver   # con la API levantada: 9 de 9 redirecciones
 npm run backup-test      # respaldo en frío + restauración verificada
