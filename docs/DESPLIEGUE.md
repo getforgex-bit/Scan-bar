@@ -84,7 +84,8 @@ curl -L https://codeload.github.com/getforgex-bit/Scan-bar/tar.gz/refs/heads/mai
 ### Cuentas
 
 El panel genera las contraseñas la primera vez y las muestra en **Datos → Cuentas**:
-- SuperAdmin `admin@scanbar.mx`: *Administración* pide solo su contraseña (y la vuelve a pedir tras 15 minutos sin uso). Desde ahí,
+- SuperAdmin `admin@scanbar.mx`: en la app, botón **Administración** (arriba a la derecha) o `…/admin`: un solo campo, su contraseña
+  (la vuelve a pedir tras 15 minutos sin uso). En el panel, *Datos → Cuentas → Abrir Administración*. Desde ahí,
   *Tarjetas de acceso → Descargar las tarjetas de todos los negocios (PDF)*.
 - Cajas `caja.<negocio>@scanbar.mx` (modo Caja de cada negocio).
 - **Tarjetas de acceso**: *Datos → Cuentas → Descargar tarjetas de acceso (PDF)*. Imprime y entrega a cada negocio su tarjeta:

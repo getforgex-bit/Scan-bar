@@ -16,7 +16,7 @@ import { registerAdmin, redactHeaders, redactQuery } from './admin';
 import { registerBuilds, bomHash } from './builds';
 import { registerWeb } from './web';
 import { issueProductCode, buildLabels, sendLabels, labelsQuery } from './catalog';
-import { isReservedEmail } from './bootstrap';
+import { isReservedEmail, adminEmail } from './bootstrap';
 import { hashToken, TOKEN_RE } from './acceso';
 import { newSecret, verifyTotp, otpauthUri, sha256 } from './totp';
 import { securityHeaders, rateLimiter, isLocalHost, encryptSecret, decryptSecret, passwordProblem, PAGE_CSP } from './security';
@@ -190,15 +190,18 @@ export async function buildApp(opts: AppOpts = {}): Promise<FastifyInstance & { 
 
   app.post('/v1/auth/login', async (req, reply) => {
     limit(reply, `login:${req.ip}`, 30, 60_000);
-    const body = z.object({ email: z.string().email(), password: z.string().min(1), tenantSlug: z.string().optional(), totp: z.string().optional(), recoveryCode: z.string().optional() }).parse(req.body);
-    const email = body.email.toLowerCase();
+    const body = z.object({ email: z.string().email().optional(), password: z.string().min(1), tenantSlug: z.string().optional(), totp: z.string().optional(), recoveryCode: z.string().optional() }).parse(req.body);
+    // Sin correo = "Administración, solo contraseña": la cuenta del administrador del despliegue (ADMIN_EMAIL).
+    const soloAdmin = !body.email;
+    const email = (body.email ?? adminEmail()).toLowerCase();
     const key = `${email}|${req.ip}`;
     if ((fails.get(key)?.lockedUntil ?? 0) > Date.now()) throw new HttpError(429, 'locked', 'Cuenta bloqueada temporalmente');
     const rows = (await publicQuery(db, 'SELECT * FROM login_lookup($1)', [email])).rows;
     const ok = rows.length > 0 && await argon2.verify(rows[0].password_hash, body.password).catch(() => false);
     if (!ok) { noteFail(key); throw new HttpError(401, 'bad_credentials', 'Credenciales inválidas'); }
     let m = rows[0];
-    if (body.tenantSlug) {
+    if (soloAdmin) { m = rows.find(r => r.role === 'superadmin'); if (!m) { noteFail(key); throw new HttpError(401, 'bad_credentials', 'Credenciales inválidas'); } }
+    else if (body.tenantSlug) {
       const t = (await publicQuery(db, 'SELECT * FROM public_tenant($1)', [body.tenantSlug])).rows[0];
       m = rows.find(r => r.tenant_id === t?.id) ?? rows[0];
     }

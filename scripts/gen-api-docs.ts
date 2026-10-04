@@ -30,7 +30,7 @@ const doc = async (title: string, method: string, path: string, opts: { cookie?:
 const pos = await login('caja2@ejemplo.mx', creds.SEED_POS_PASSWORD);
 const sec = (await owner.query("SELECT totp_secret FROM users WHERE email='admin2@ejemplo.mx'")).rows[0]?.totp_secret;
 // POST /v1/auth/acceso y /v1/admin/access-cards: documentados a mano en docs/API.md (el token solo existe dentro del QR).
-await doc('POST /v1/auth/login', 'POST', '/v1/auth/login', { body: { email: 'caja2@ejemplo.mx', password: '<contraseña>' }, note: 'Argon2id, bloqueo tras 5 intentos fallidos (15 min). Solo si el servidor arranca con `ADMIN_TOTP=1`, el SuperAdmin con TOTP activo debe enviar además `totp` (6 dígitos) o `recoveryCode`.' });
+await doc('POST /v1/auth/login', 'POST', '/v1/auth/login', { body: { email: 'caja2@ejemplo.mx', password: '<contraseña>' }, note: 'Argon2id, bloqueo tras 5 intentos fallidos (15 min). Sin `email`, entra la cuenta del administrador (`ADMIN_EMAIL`; solo si es SuperAdmin): es la pantalla *Administración* de un solo campo. Solo si el servidor arranca con `ADMIN_TOTP=1`, el SuperAdmin con TOTP activo debe enviar además `totp` (6 dígitos) o `recoveryCode`.' });
 const adm = sec ? await login('admin2@ejemplo.mx', creds.SEED_ADMIN_PASSWORD, { totp: totpNow(decryptSecret(sec)) }) : null;
 await doc('GET /v1/public/tenants (sin sesión)', 'GET', '/v1/public/tenants', { note: 'Negocios con configurador activo.' });
 const cafe = await doc('GET /v1/public/t/:slug/configurators/:configurador (sin sesión)', 'GET', '/v1/public/t/tienda-0003/configurators/bebida', { note: 'Definición (grupos y reglas) + opciones del catálogo. No expone stock exacto ni GTIN.' });

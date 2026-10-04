@@ -2,7 +2,8 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { api, ApiError } from './api';
 import { SHOW_CONFIGURATOR } from './flags';
 
-export type AuthMode = 'login' | 'register';
+/** login = personal (correo + contraseña); admin = Administración, solo contraseña; register = cliente (configurador). */
+export type AuthMode = 'login' | 'register' | 'admin';
 
 /** Diálogo modal nativo: foco atrapado, Esc para cerrar y fondo inerte sin librerías. */
 export function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
@@ -23,7 +24,7 @@ export function Modal({ title, onClose, children }: { title: string; onClose: ()
 export function AuthDialog({ mode, note, onClose, onDone, onSwitch }: { mode: AuthMode; note?: string; onClose: () => void; onDone: () => void; onSwitch: (m: AuthMode) => void }) {
   const [email, setEmail] = useState(''); const [pw, setPw] = useState(''); const [pw2, setPw2] = useState('');
   const [code, setCode] = useState(''); const [needTotp, setNeedTotp] = useState(false); const [err, setErr] = useState(''); const [busy, setBusy] = useState(false);
-  const register = mode === 'register';
+  const register = mode === 'register'; const admin = mode === 'admin';
   const mismatch = register && pw2.length > 0 && pw !== pw2;
 
   const submit = async (e: React.FormEvent) => {
@@ -32,7 +33,7 @@ export function AuthDialog({ mode, note, onClose, onDone, onSwitch }: { mode: Au
     setBusy(true);
     try {
       if (register) await api('/v1/auth/register', { method: 'POST', body: { email, password: pw } });
-      else await api('/v1/auth/login', { method: 'POST', body: { email, password: pw, ...(code ? (code.length > 6 ? { recoveryCode: code } : { totp: code }) : {}) } });
+      else await api('/v1/auth/login', { method: 'POST', body: { ...(admin ? {} : { email }), password: pw, ...(code ? (code.length > 6 ? { recoveryCode: code } : { totp: code }) : {}) } });
       onDone();
     } catch (x) {
       if (x instanceof ApiError && x.body?.error === 'totp_required') setNeedTotp(true);
@@ -41,12 +42,14 @@ export function AuthDialog({ mode, note, onClose, onDone, onSwitch }: { mode: Au
   };
 
   return (
-    <Modal title={register ? 'Crear cuenta' : 'Entrar'} onClose={onClose}>
+    <Modal title={register ? 'Crear cuenta' : admin ? 'Administración' : 'Entrar'} onClose={onClose}>
       {note && <p className="label">{note}</p>}
       <form onSubmit={submit} className="stack">
-        <label className="label" htmlFor="au-e">Correo</label>
-        <input id="au-e" type="email" required autoFocus autoComplete="username" value={email} onChange={e => setEmail(e.target.value)} />
-        <label className="label" htmlFor="au-p">Contraseña{register ? ' (mínimo 12 caracteres)' : ''}</label>
+        {!admin && <>
+          <label className="label" htmlFor="au-e">Correo</label>
+          <input id="au-e" type="email" required autoFocus autoComplete="username" value={email} onChange={e => setEmail(e.target.value)} />
+        </>}
+        <label className="label" htmlFor="au-p">{admin ? 'Contraseña del administrador' : 'Contraseña'}{register ? ' (mínimo 12 caracteres)' : ''}</label>
         <input id="au-p" type="password" required minLength={register ? 12 : 1} autoComplete={register ? 'new-password' : 'current-password'} value={pw} onChange={e => setPw(e.target.value)} />
         {register && <>
           <label className="label" htmlFor="au-p2">Repite la contraseña</label>
@@ -58,9 +61,12 @@ export function AuthDialog({ mode, note, onClose, onDone, onSwitch }: { mode: Au
           <input id="au-t" inputMode="numeric" autoComplete="one-time-code" value={code} onChange={e => setCode(e.target.value.trim())} className="mono" autoFocus />
         </>}
         {err && <p className="err" role="alert">⚠ {err}</p>}
-        <button type="submit" disabled={busy || mismatch}>{register ? 'Registrarme' : 'Entrar'}</button>
+        <button type="submit" disabled={busy || mismatch}>{register ? 'Registrarme' : admin ? 'Entrar a Administración' : 'Entrar'}</button>
       </form>
-      {SHOW_CONFIGURATOR ? <p className="label">
+      {admin
+        ? <p className="label">La contraseña está en el panel del servidor: <b>Datos → Cuentas</b>. ¿Eres de un negocio? <button className="link inline" onClick={() => { setErr(''); onSwitch('login'); }}>Entra con tu correo</button> o escanea tu tarjeta de acceso.</p>
+        : !register && <p className="label">¿Eres el administrador? <button className="link inline" onClick={() => { setErr(''); onSwitch('admin'); }}>Entra solo con la contraseña</button>.</p>}
+      {admin ? null : SHOW_CONFIGURATOR ? <p className="label">
         {register ? '¿Ya tienes cuenta? ' : '¿No tienes cuenta? '}
         <button className="link inline" onClick={() => { setErr(''); onSwitch(register ? 'login' : 'register'); }}>{register ? 'Entrar' : 'Regístrate'}</button>
       </p> : <p className="label">Solo para el personal: administrador y cajas de cada negocio. Para escanear no hace falta cuenta.</p>}

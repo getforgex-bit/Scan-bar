@@ -4,7 +4,7 @@ Base: `http://localhost:3000`. Toda petición que cambia estado a `/v1/*` exige 
 
 ## POST /v1/auth/login
 
-Argon2id, bloqueo tras 5 intentos fallidos (15 min). Solo si el servidor arranca con `ADMIN_TOTP=1`, el SuperAdmin con TOTP activo debe enviar además `totp` (6 dígitos) o `recoveryCode`.
+Argon2id, bloqueo tras 5 intentos fallidos (15 min). Sin `email`, entra la cuenta del administrador (`ADMIN_EMAIL`; solo si es SuperAdmin): es la pantalla *Administración* de un solo campo. Solo si el servidor arranca con `ADMIN_TOTP=1`, el SuperAdmin con TOTP activo debe enviar además `totp` (6 dígitos) o `recoveryCode`.
 
 ```bash
 curl -X POST  -H 'X-Requested-With: x' -H 'Content-Type: application/json' -d '{"email":"caja2@ejemplo.mx","password":"<contraseña>"}' 'http://localhost:3000/v1/auth/login'

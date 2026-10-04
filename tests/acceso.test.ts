@@ -124,4 +124,17 @@ describe('Administración solo con contraseña (sin ADMIN_TOTP)', () => {
     for (let i = 0; i < 5; i++) expect((await login(app, 'admin2@ejemplo.mx', 'mala-' + i, misma)).res.statusCode).toBe(401);
     expect((await login(app, 'admin2@ejemplo.mx', ADMIN_PW, misma)).res.statusCode).toBe(429);
   });
+
+  it('Administración con un solo campo: basta la contraseña del administrador (sin correo)', async () => {
+    const antes = process.env.ADMIN_EMAIL; process.env.ADMIN_EMAIL = 'admin4@ejemplo.mx'; // en producción: admin@scanbar.mx
+    try {
+      const r = await call('POST', '/v1/auth/login', {}, { password: ADMIN_PW });
+      expect(r.statusCode).toBe(200); expect(r.json().role).toBe('superadmin');
+      expect((await call('GET', '/v1/auth/me', sid(r))).json()).toMatchObject({ email: 'admin4@ejemplo.mx', role: 'superadmin', adminUnlocked: true });
+      expect((await call('GET', '/v1/admin/access-cards', sid(r))).statusCode).toBe(200);
+      expect((await call('POST', '/v1/auth/login', {}, { password: POS_PW })).statusCode).toBe(401); // otra contraseña no
+      process.env.ADMIN_EMAIL = 'caja4@ejemplo.mx'; // aunque apunte a una caja, sin correo solo entra un SuperAdmin
+      expect((await call('POST', '/v1/auth/login', {}, { password: POS_PW })).statusCode).toBe(401);
+    } finally { if (antes === undefined) delete process.env.ADMIN_EMAIL; else process.env.ADMIN_EMAIL = antes; }
+  });
 });

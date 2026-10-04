@@ -35,8 +35,10 @@ function Shell({ me, refresh }: { me: Me | null; refresh: () => Promise<void> })
   const staff = isStaff(me); const admin = me?.role === 'superadmin';
   const [modePref, setModePref] = useState<Mode>('nav');
   const mode: Mode = staff ? modePref : 'nav'; // el modo Caja exige una cuenta de personal
-  const [tab, setTab] = useState<Tab>(pathTenant() ? 'cfg' : location.pathname === '/campo' && admin ? 'campo' : 'scan');
-  const [auth, setAuth] = useState<{ mode: AuthMode; note?: string } | null>(null);
+  // …/admin: Administración (si no hay sesión de administrador, pide solo la contraseña).
+  const enAdmin = location.pathname.replace(/\/+$/, '') === '/admin';
+  const [tab, setTab] = useState<Tab>(pathTenant() ? 'cfg' : location.pathname === '/campo' && admin ? 'campo' : enAdmin && admin ? 'con' : 'scan');
+  const [auth, setAuth] = useState<{ mode: AuthMode; note?: string } | null>(enAdmin && !admin ? { mode: 'admin' } : null);
   const [products, setProducts] = useState<Product[]>([]);
   const [cart, setCart] = useState<Line[]>([]);
   const [live, setLive] = useState('');
@@ -136,7 +138,7 @@ function Shell({ me, refresh }: { me: Me | null; refresh: () => Promise<void> })
       setReceipt({ id: 0, totalCents: total, taxCents: tax, items: cart.map(l => ({ gtin: l.gtin, name: l.name, qty: l.qty, unitPriceCents: l.priceCents })), at: new Date().toLocaleString('es-MX'), pending: true }); setCart([]);
     }
   };
-  const logout = async () => { await api('/v1/auth/logout', { method: 'POST' }); await refresh(); };
+  const logout = async () => { await api('/v1/auth/logout', { method: 'POST' }); history.replaceState(null, '', '/'); await refresh(); };
 
   const tabs: [Tab, string, boolean][] = [['scan', 'Escáner', true], ['cfg', 'Configurador', SHOW_CONFIGURATOR], ['mine', 'Mis configuraciones', SHOW_CONFIGURATOR && !!me], ['cat', 'Catálogo y etiquetas', staff], ['con', 'Administración', !!admin], ['campo', 'Campo', !!admin]];
 
@@ -152,6 +154,7 @@ function Shell({ me, refresh }: { me: Me | null; refresh: () => Promise<void> })
           {tabs.filter(t => t[2]).map(([k, l]) => <button key={k} className={'link' + (tab === k ? ' active' : '')} aria-current={tab === k ? 'page' : undefined} onClick={() => setTab(k)}>{l}</button>)}
         </nav>}
         <div className="row gap account">
+          {!admin && <button className="link" onClick={() => setAuth({ mode: 'admin' })}>Administración</button>}
           {me ? <><span className="label" title={me.role}>{me.email}</span><button className="link" onClick={logout}>Salir</button></>
             : <><button className="link" onClick={() => setAuth({ mode: 'login' })}>Entrar</button>{SHOW_CONFIGURATOR && <button className="secondary" onClick={() => setAuth({ mode: 'register' })}>Registrarse</button>}</>}
         </div>
@@ -203,7 +206,8 @@ function Shell({ me, refresh }: { me: Me | null; refresh: () => Promise<void> })
         )}
         <footer className="label version">Versión del {new Date(__BUILD__).toLocaleString('es-MX', { dateStyle: 'long', timeStyle: 'short' })}</footer>
       </main>
-      {auth && <AuthDialog mode={auth.mode} note={auth.note} onClose={() => setAuth(null)} onSwitch={m => setAuth({ mode: m })} onDone={async () => { setAuth(null); await refresh(); }} />}
+      {auth && <AuthDialog key={auth.mode} mode={auth.mode} note={auth.note} onClose={() => { setAuth(null); if (enAdmin) history.replaceState(null, '', '/'); }} onSwitch={m => setAuth({ mode: m })}
+        onDone={async () => { if (auth.mode === 'admin') history.replaceState(null, '', '/admin'); else if (enAdmin) history.replaceState(null, '', '/'); setAuth(null); await refresh(); }} />}
       {receipt && (
         <dialog open className="receipt-dlg" aria-label="Ticket">
           <article className="ticket">

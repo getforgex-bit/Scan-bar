@@ -25,7 +25,7 @@ clientes y *Mis configuraciones*). Iniciar sesión es solo para el personal:
 |---|---|---|
 | Visitante | sin cuenta | escanear y abrir la página del producto |
 | Caja | `caja.<negocio>@scanbar.mx` en producción (`caja1..9@ejemplo.mx` en la semilla) | modo Caja (mini POS) y catálogo de su negocio |
-| SuperAdmin | `admin@scanbar.mx` en producción (`admin1..9@ejemplo.mx` en la semilla) | *Administración*: pide solo la **contraseña** (se bloquea a los 15 min sin uso; segundo factor TOTP opcional con `ADMIN_TOTP=1`) |
+| SuperAdmin | `admin@scanbar.mx` en producción (`admin1..9@ejemplo.mx` en la semilla) | *Administración* (botón arriba o `…/admin`): pide solo la **contraseña**, un campo (se bloquea a los 15 min sin uso; segundo factor TOTP opcional con `ADMIN_TOTP=1`) |
 
 En producción las cuentas las crea el arranque con los secretos `ADMIN_PASSWORD` y `CAJA_PASSWORD` (el secreto manda: cambiarlo y reiniciar
 cambia la contraseña). Nadie puede registrar esos correos por su cuenta.

@@ -74,6 +74,7 @@ function pintar(e) {
   $('d-tunel').textContent = e.tunelUrl || '—';
   $('d-local').textContent = e.localUrl;
   $('d-equipo').textContent = e.equipo;
+  $('abrir-admin').href = `${e.publicUrl || e.localUrl}/admin`;
   if (document.activeElement !== $('pub') && !$('pub').dataset.editado) $('pub').value = e.publicUrl;
 
   // versión: aviso en Servidor y detalle en Datos
