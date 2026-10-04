@@ -34,10 +34,10 @@ export async function freshDb(seed = true) {
   return urls;
 }
 
-export async function makeApp(opts: { logRequests?: boolean } = {}) {
+export async function makeApp(opts: { logRequests?: boolean; adminTotp?: boolean } = {}) {
   const urls = await freshDb();
   const db = makeDb(urls);
-  const app = await buildApp({ db, logRequests: opts.logRequests ?? false });
+  const app = await buildApp({ db, logRequests: opts.logRequests ?? false, adminTotp: opts.adminTotp ?? false });
   const owner = new pg.Pool({ connectionString: urls.ownerUrl });
   return { app, db, urls, owner, close: async () => { await app.close(); await db.close(); await owner.end(); } };
 }

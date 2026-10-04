@@ -129,7 +129,6 @@ $('revisar').addEventListener('click', async () => {
 
 // ---------- tarjetas de acceso ----------
 $('tarjetas').addEventListener('click', async () => {
-  if (!confirm('Se generan tarjetas nuevas para todos los negocios y las anteriores dejan de servir. ¿Continuar?')) return;
   const m = $('tarjetas-msg'); m.className = 'msg'; m.textContent = 'Generando…';
   try {
     const r = await fetch('/api/tarjetas', { method: 'POST', headers: { 'x-panel': '1' } });

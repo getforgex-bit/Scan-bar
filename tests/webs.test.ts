@@ -7,7 +7,6 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { makeApp, login, H, ADMIN_PW, POS_PW } from './helpers';
-import { totpNow } from '../apps/api/src/totp';
 import { isValidGtin13 } from '../packages/codes/src/index';
 
 let ctx: Awaited<ReturnType<typeof makeApp>>; let app: any;
@@ -20,9 +19,7 @@ const cfg = (body: any, origin = SITE) => call('POST', '/v1/public/t/tienda-0003
 
 beforeAll(async () => {
   ctx = await makeApp(); app = ctx.app;
-  admin = (await login(app, 'admin1@ejemplo.mx', ADMIN_PW, ip())).cookies;
-  const setup = (await call('POST', '/v1/auth/totp/setup', admin)).json();
-  expect((await call('POST', '/v1/auth/totp/verify', admin, { code: totpNow(setup.secret) })).statusCode).toBe(200);
+  admin = (await login(app, 'admin1@ejemplo.mx', ADMIN_PW, ip())).cookies; // solo contraseña (sin ADMIN_TOTP)
   caja3 = (await login(app, 'caja3@ejemplo.mx', POS_PW, ip())).cookies;
 });
 afterAll(async () => { await ctx.close(); });

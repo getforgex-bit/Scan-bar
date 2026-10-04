@@ -18,7 +18,7 @@ const lines = (...skus: (string | [string, number])[]) => skus.map(s => (Array.i
 const order = (l: ReturnType<typeof lines>, cookies: any = {}) => call('POST', '/v1/public/t/tienda-0003/builds', cookies, { configurator: 'bebida', lines: l });
 
 beforeAll(async () => {
-  ctx = await makeApp(); app = ctx.app;
+  ctx = await makeApp({ adminTotp: true }); app = ctx.app; // (5) prueba el segundo factor opcional (ADMIN_TOTP=1)
   const d = (await call('GET', '/v1/public/t/tienda-0003/configurators/bebida')).json();
   cafe = Object.fromEntries(d.products.map((p: any) => [p.sku, p.id]));
 });

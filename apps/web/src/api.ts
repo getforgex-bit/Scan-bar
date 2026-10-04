@@ -21,7 +21,7 @@ export async function api<T = any>(path: string, opts: { method?: string; body?:
 export type Me = {
   role: 'superadmin' | 'operador_pos' | 'cliente'; email: string;
   tenant: { id: number; slug: string; name: string } | null; // null = cliente registrado (sin negocio)
-  totp: boolean; adminUnlocked: boolean;
+  totp: boolean; totpRequired: boolean; adminUnlocked: boolean;
 };
 
 export const money = (c: number) => (c / 100).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });

@@ -4,7 +4,7 @@ Base: `http://localhost:3000`. Toda petición que cambia estado a `/v1/*` exige 
 
 ## POST /v1/auth/login
 
-Argon2id, bloqueo tras 5 intentos fallidos (15 min). El SuperAdmin con TOTP activo debe enviar además `totp` (6 dígitos) o `recoveryCode`.
+Argon2id, bloqueo tras 5 intentos fallidos (15 min). Solo si el servidor arranca con `ADMIN_TOTP=1`, el SuperAdmin con TOTP activo debe enviar además `totp` (6 dígitos) o `recoveryCode`.
 
 ```bash
 curl -X POST  -H 'X-Requested-With: x' -H 'Content-Type: application/json' -d '{"email":"caja2@ejemplo.mx","password":"<contraseña>"}' 'http://localhost:3000/v1/auth/login'
@@ -251,7 +251,7 @@ Respuesta **201**:
 
 ## GET /v1/admin/configurators
 
-Consola: exige TOTP y contraseña confirmada. `POST` crea y `PATCH /:id` edita (definición validada; 422 `definicion_invalida`).
+Consola: exige contraseña confirmada (y TOTP con `ADMIN_TOTP=1`). `POST` crea y `PATCH /:id` edita (definición validada; 422 `definicion_invalida`).
 
 ```bash
 curl -X GET -H 'cookie: sid=<sesión>' -H 'X-Requested-With: x' 'http://localhost:3000/v1/admin/configurators'
@@ -277,7 +277,7 @@ Respuesta **200**:
 
 ## POST /v1/admin/products (con variantes)
 
-Agrega un producto a la página web de cualquier negocio (consola: TOTP + contraseña confirmada). Cada variante (talla, tamaño, gramaje) es un producto con su GTIN: `SKU-VARIANTE`. Origen `scanbar`: la web lo recibe por `/catalog`. 409 si el SKU existe.
+Agrega un producto a la página web de cualquier negocio (consola: contraseña confirmada). Cada variante (talla, tamaño, gramaje) es un producto con su GTIN: `SKU-VARIANTE`. Origen `scanbar`: la web lo recibe por `/catalog`. 409 si el SKU existe.
 
 ```bash
 curl -X POST -H 'cookie: sid=<sesión>' -H 'X-Requested-With: x' -H 'Content-Type: application/json' -d '{"tenantId":10,"sku":"DOC-1791022469806","name":"Blusa de ejemplo","category":"Verano","priceCents":49900,"stock":5,"variants":[{"label":"CH"},{"label":"M","priceCents":52900}]}' 'http://localhost:3000/v1/admin/products'
@@ -455,4 +455,4 @@ Respuesta **403**:
 
 ## GET /v1/admin/access-cards · POST /v1/admin/access-cards · POST /v1/admin/access-cards/:tenantId/revoke
 
-Consola (*Administración → Acceso con QR*). `GET`: por negocio, su cuenta de caja (`caja`) y la tarjeta activa (`card`: `createdAt`, `lastUsedAt`, `uses`, o `null`). `POST` con `{"tenantIds":[…]}` (o sin cuerpo: todos) emite tarjetas nuevas, desactiva las anteriores de esos negocios y responde el PDF para imprimir (`tarjetas-acceso-<fecha>.pdf`; negocios sin caja en la cabecera `X-Sin-Caja`). El token solo existe dentro del QR del PDF: no se guarda (solo su sha256) ni se registra. `…/revoke` desactiva la tarjeta de un negocio (404 si no tenía). Todo queda en `audit_log`.
+Consola (*Administración → Tarjetas de acceso*). `GET`: por negocio, su cuenta de caja (`caja`) y la tarjeta activa (`card`: `createdAt`, `lastUsedAt`, `uses`, o `null`). `POST` con `{"tenantIds":[…]}` (o sin cuerpo: todos) responde el PDF para imprimir: reimprime las tarjetas activas (siguen sirviendo) y crea las que falten; con `"nuevas":true` las reemplaza (las anteriores dejan de servir) (`tarjetas-acceso-<fecha>.pdf`; negocios sin caja en la cabecera `X-Sin-Caja`). El token va dentro del QR del PDF; se guarda su sha256 y una copia cifrada con `TOTP_ENC_KEY` (para reimprimir), nunca en claro ni en registros. `…/revoke` desactiva la tarjeta de un negocio (404 si no tenía). Todo queda en `audit_log`.

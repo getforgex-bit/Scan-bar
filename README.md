@@ -25,7 +25,7 @@ clientes y *Mis configuraciones*). Iniciar sesión es solo para el personal:
 |---|---|---|
 | Visitante | sin cuenta | escanear y abrir la página del producto |
 | Caja | `caja.<negocio>@scanbar.mx` en producción (`caja1..9@ejemplo.mx` en la semilla) | modo Caja (mini POS) y catálogo de su negocio |
-| SuperAdmin | `admin@scanbar.mx` en producción (`admin1..9@ejemplo.mx` en la semilla) | *Administración*: pide **contraseña** (se bloquea a los 15 min sin uso) y segundo factor (TOTP) |
+| SuperAdmin | `admin@scanbar.mx` en producción (`admin1..9@ejemplo.mx` en la semilla) | *Administración*: pide solo la **contraseña** (se bloquea a los 15 min sin uso; segundo factor TOTP opcional con `ADMIN_TOTP=1`) |
 
 En producción las cuentas las crea el arranque con los secretos `ADMIN_PASSWORD` y `CAJA_PASSWORD` (el secreto manda: cambiarlo y reiniciar
 cambia la contraseña). Nadie puede registrar esos correos por su cuenta.
@@ -35,7 +35,7 @@ Contraseñas de la semilla en `.dev-credentials.txt` (o `SEED_ADMIN_PASSWORD` / 
 **Agregar un producto a una web**: *Administración → Productos y etiquetas* → elige la web → nombre, categoría (la sección de la web), precio y,
 si aplica, variantes (`CH, M, G` o `Chico=45, Grande=55`): cada variante recibe su GTIN al instante y la web la muestra en su siguiente carga.
 **Etiquetas**: en la misma sección, *Descargar PDF* (carta o A4, QR opcional, copias): nombre encima de cada código, con guías de corte.
-**Entrar sin contraseña**: cada negocio recibe una *tarjeta de acceso* con QR (panel → *Datos → Cuentas*, o *Administración → Acceso con QR*);
+**Entrar sin contraseña**: cada negocio recibe una *tarjeta de acceso* con QR (panel → *Datos → Cuentas*, o *Administración → Tarjetas de acceso*);
 escanearla en el escáner (sin sesión) entra como su caja. El escáner también abre cualquier QR con un enlace (muestra el sitio y un botón *Abrir enlace*).
 **Cada negocio descarga su propio PDF** desde su cuenta (`caja.<negocio>@scanbar.mx`): arriba de *Catálogo y etiquetas → Descargar PDF*, con todos sus códigos y solo los suyos.
 El **SuperAdmin**, en la misma pestaña, elige el negocio o *Todos los negocios* (un archivo; cada negocio empieza en página nueva).
@@ -46,7 +46,7 @@ La cámara exige HTTPS salvo en `localhost`. Para probar desde un teléfono, exp
 ## Qué incluye
 - **Códigos**: `packages/codes` (GTIN-13, módulo 10, Digital Link), SVG EAN-13/QR (`GET /v1/codes/:gtin.svg`), resolver `GET /01/:gtin14` con ficha de respaldo y anti redirección abierta.
 - **Aislamiento**: PostgreSQL con RLS por `tenant_id`, `withTenant()`, roles `app_rw` (sujeto a RLS), `admin_ro` y `admin_rw`, con contraseñas tomadas del entorno.
-- **Cuentas**: Argon2id, cookie HttpOnly/SameSite=Lax/Secure (salvo localhost), bloqueo tras 5 intentos, registro de clientes, contraseña + TOTP (cifrado en reposo) para administración.
+- **Cuentas**: Argon2id, cookie HttpOnly/SameSite=Lax/Secure (salvo localhost), bloqueo tras 5 intentos, registro de clientes, contraseña para administración (TOTP opcional con `ADMIN_TOTP=1`, cifrado en reposo).
 - **Seguridad**: CSP sin scripts ni estilos en línea, HSTS, X-Frame-Options, límite de tasa por IP en todo lo público.
 - **PWA**: lector con BarcodeDetector nativo o Wasm autoalojado, consenso de 2 lecturas, antirrebote, captura manual; modos Navegación/Caja; ventas idempotentes con cola sin red; ticket de 80 mm.
 - **Integración con las webs**: catálogo público por negocio (`GET /v1/public/t/:slug/catalog`), códigos para configuraciones hechas en la web (`POST /v1/public/t/:slug/configurations`), CORS por dominio del negocio, sincronización de los repos con origen (`repo`/`scanbar`) y variantes con GTIN propio.

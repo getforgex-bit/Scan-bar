@@ -1,6 +1,7 @@
 // Tarjetas de acceso: un QR impreso por negocio para entrar como su caja sin escribir contraseña (escáner de la PWA o la
 // cámara del teléfono). El enlace lleva el token en el fragmento (#k=…): el navegador no lo manda al servidor ni queda en
-// registros; la PWA lo lee y lo envía en el cuerpo de POST /v1/auth/acceso. Solo se guarda su sha256.
+// registros; la PWA lo lee y lo envía en el cuerpo de POST /v1/auth/acceso. Se guarda su sha256 (para validar) y una copia
+// cifrada con TOTP_ENC_KEY (para reimprimir la misma tarjeta).
 import crypto from 'node:crypto';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
@@ -8,6 +9,7 @@ import { HttpError } from './errors';
 import type { Db } from './db';
 import type { Session } from './session';
 import { cajaEmail } from './bootstrap';
+import { encryptSecret, decryptSecret } from './security';
 import { textQrSvg } from './svg';
 import { MM, buildPdf, cutGuide, placeOps, svgToPdf, textOps, textWidth, wrapText } from './pdf';
 
@@ -21,23 +23,33 @@ type Query = (sql: string, params?: unknown[]) => Promise<{ rows: any[] }>;
 export type Card = { tenantId: number; slug: string; name: string; email: string; url: string };
 
 /**
- * Emite una tarjeta nueva para cada negocio pedido (todos si no se indica) y desactiva la anterior: la tarjeta va a la cuenta
- * de caja del negocio (caja.<negocio>@… si existe; si no, su primer operador). Negocios sin caja se devuelven en `sinCaja`.
- * Corre dentro de la transacción del llamador (consola: admin_rw; panel: dueño de la base).
+ * Tarjetas para imprimir de los negocios pedidos (todos si no se indica), a nombre de su cuenta de caja (caja.<negocio>@…
+ * si existe; si no, su primer operador). Por omisión reutiliza la tarjeta activa (se descifra su token: la impresa sigue
+ * sirviendo) y solo crea las que faltan; con `nuevas` reemplaza la activa (la anterior deja de servir). Negocios sin caja
+ * se devuelven en `sinCaja`. Corre dentro de la transacción del llamador (consola: admin_rw; panel: dueño de la base).
  */
-export async function issueCards(q: Query, o: { tenantIds?: number[]; createdBy: number | null; base: string }) {
+export async function prepareCards(q: Query, o: { tenantIds?: number[]; createdBy: number | null; base: string; nuevas?: boolean }) {
   const tenants = (await q(`SELECT id::int AS id, slug, name FROM tenants ${o.tenantIds ? 'WHERE id = ANY($1)' : ''} ORDER BY name`, o.tenantIds ? [o.tenantIds] : [])).rows;
-  const cards: Card[] = []; const sinCaja: string[] = [];
+  const cards: Card[] = []; const sinCaja: string[] = []; const creadas: number[] = [];
   for (const t of tenants) {
     const u = (await q(`SELECT u.id, u.email FROM memberships m JOIN users u ON u.id = m.user_id
       WHERE m.tenant_id = $1 AND m.role = 'operador_pos' ORDER BY (u.email = $2) DESC, u.id LIMIT 1`, [t.id, cajaEmail(t.slug)])).rows[0];
     if (!u) { sinCaja.push(t.name); continue; }
-    const token = crypto.randomBytes(32).toString('base64url');
-    await q('UPDATE access_cards SET revoked_at = now() WHERE tenant_id = $1 AND revoked_at IS NULL', [t.id]);
-    await q('INSERT INTO access_cards (tenant_id, user_id, token_hash, created_by) VALUES ($1,$2,$3,$4)', [t.id, u.id, hashToken(token), o.createdBy]);
+    let token: string | null = null;
+    if (!o.nuevas) {
+      const activa = (await q('SELECT token_enc FROM access_cards WHERE tenant_id = $1 AND user_id = $2 AND revoked_at IS NULL', [t.id, u.id])).rows[0];
+      if (activa?.token_enc) { try { token = decryptSecret(activa.token_enc); } catch { token = null; } } // otra llave: se emite nueva
+    }
+    if (!token) {
+      token = crypto.randomBytes(32).toString('base64url');
+      await q('UPDATE access_cards SET revoked_at = now() WHERE tenant_id = $1 AND revoked_at IS NULL', [t.id]);
+      await q('INSERT INTO access_cards (tenant_id, user_id, token_hash, token_enc, created_by) VALUES ($1,$2,$3,$4,$5)',
+        [t.id, u.id, hashToken(token), encryptSecret(token), o.createdBy]);
+      creadas.push(t.id);
+    }
     cards.push({ tenantId: t.id, slug: t.slug, name: t.name, email: u.email, url: accessUrl(o.base, token) });
   }
-  return { cards, sinCaja };
+  return { cards, sinCaja, creadas };
 }
 
 /** Hoja carta con hasta 4 tarjetas (2 × 2) para recortar: nombre del negocio, QR grande e instrucciones. */
@@ -71,7 +83,7 @@ export function cardsPdf(cards: Card[]): Buffer {
 type Guard = (req: FastifyRequest) => Promise<void>;
 type Audit = (s: Session, tenantId: number | null, action: string, before: unknown, after: unknown) => Promise<unknown>;
 
-/** Consola (Administración → Acceso con QR): ver, emitir (PDF) y desactivar tarjetas. */
+/** Consola (Administración → Tarjetas de acceso): ver, descargar/reemplazar (PDF) y desactivar tarjetas. */
 export function registerAccessAdmin(app: FastifyInstance, db: Db, h: { admin: Guard; audit: Audit }) {
   const S = (req: FastifyRequest) => (req as any).session as Session;
 
@@ -87,18 +99,19 @@ export function registerAccessAdmin(app: FastifyInstance, db: Db, h: { admin: Gu
     });
   });
 
-  // Emite (y desactiva las anteriores de esos negocios); responde el PDF para imprimir. El token no se guarda ni se registra.
+  // PDF para imprimir: reutiliza las tarjetas activas y crea las que faltan; con nuevas=true las reemplaza. El token nunca
+  // se registra ni se guarda en claro.
   app.post('/v1/admin/access-cards', { preHandler: h.admin }, async (req, reply) => {
-    const { tenantIds } = z.object({ tenantIds: z.array(z.number().int().positive()).max(100).optional() }).parse(req.body ?? {});
+    const { tenantIds, nuevas } = z.object({ tenantIds: z.array(z.number().int().positive()).max(100).optional(), nuevas: z.boolean().default(false) }).parse(req.body ?? {});
     const c = await db.adminRw.connect();
-    let r: Awaited<ReturnType<typeof issueCards>>;
+    let r: Awaited<ReturnType<typeof prepareCards>>;
     try {
       await c.query('BEGIN');
-      r = await issueCards((sql, params) => c.query(sql, params), { tenantIds, createdBy: S(req).userId, base: `${req.protocol}://${req.host}` });
+      r = await prepareCards((sql, params) => c.query(sql, params), { tenantIds, nuevas, createdBy: S(req).userId, base: `${req.protocol}://${req.host}` });
       await c.query('COMMIT');
     } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
     if (!r.cards.length) throw new HttpError(409, 'sin_caja', `Ese negocio no tiene cuenta de caja (${r.sinCaja.join(', ')}); créala en Usuarios`);
-    for (const k of r.cards) await h.audit(S(req), k.tenantId, 'access_card.issued', null, { caja: k.email });
+    for (const k of r.cards) await h.audit(S(req), k.tenantId, r.creadas.includes(k.tenantId) ? 'access_card.issued' : 'access_card.printed', null, { caja: k.email });
     return reply.header('Content-Type', 'application/pdf').header('Cache-Control', 'no-store')
       .header('Content-Disposition', `attachment; filename="tarjetas-acceso-${new Date().toISOString().slice(0, 10)}.pdf"`)
       .header('X-Sin-Caja', encodeURIComponent(r.sinCaja.join(', '))).send(cardsPdf(r.cards));

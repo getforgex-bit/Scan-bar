@@ -19,7 +19,7 @@ Estado: fases F0–F4 del plan implementadas, más los cambios pedidos después 
 ## Decisiones tomadas al quitar el login obligatorio (revísalas)
 - **Registrarse crea una cuenta de cliente, sin permisos de personal.** No da acceso a Caja ni a Administración de ningún negocio; eso lo asigna un SuperAdmin en *Administración → Usuarios*. No existe (todavía) el alta de un negocio nuevo por autoservicio.
 - **El catálogo de opciones de un configurador es público** (nombre, precio, atributos, "agotado sí/no"); no se exponen GTIN ni existencias exactas.
-- **Funciones de administrador** = consola (`/v1/admin/*`), alta e importación de productos, alta de TOTP. Piden la contraseña de la cuenta: queda desbloqueado 15 min desde el inicio de sesión o desde la última acción de administrador, y hay botón "Bloquear ahora". La consola exige además TOTP.
+- **Funciones de administrador** = consola (`/v1/admin/*`), alta e importación de productos, tarjetas de acceso. Sin segundo factor por omisión (`ADMIN_TOTP=1` lo exige). Piden la contraseña de la cuenta: queda desbloqueado 15 min desde el inicio de sesión o desde la última acción de administrador, y hay botón "Bloquear ahora". La consola exige además TOTP.
 - Los eventos de escaneo solo se registran con sesión de personal (un visitante anónimo no tiene negocio al que atribuirlos), así que las métricas de latencia no incluyen a los visitantes.
 - Registro sin verificación de correo ni recuperación de contraseña: no hay envío de correos en el sistema.
 

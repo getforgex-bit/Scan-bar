@@ -96,13 +96,13 @@ class Hub {
   async stop() { for (const s of this.subs.values()) for (const w of s) w.end(); this.subs.clear(); await this.client?.end().catch(() => {}); this.client = null; }
 }
 
-export function registerAdmin(app: FastifyInstance, db: Db, opts: { timers: boolean }) {
+export function registerAdmin(app: FastifyInstance, db: Db, opts: { timers: boolean; totp: boolean }) {
   const S = (req: FastifyRequest) => (req as any).session as Session | undefined;
   const admin = async (req: FastifyRequest) => {
     const s = S(req);
     if (!s) throw new HttpError(401, 'unauthenticated');
     if (s.role !== 'superadmin') throw new HttpError(403, 'forbidden');
-    if (!s.totp) throw new HttpError(403, 'totp_required', 'El SuperAdmin debe activar el segundo factor (TOTP)');
+    if (opts.totp && !s.totp) throw new HttpError(403, 'totp_required', 'El SuperAdmin debe activar el segundo factor (TOTP)');
     if ((s.adminUntil ?? 0) < Date.now()) throw new HttpError(403, 'admin_locked', 'Confirma tu contraseña para usar las funciones de administrador');
     s.adminUntil = Date.now() + ADMIN_UNLOCK_MS; // se renueva con el uso
   };

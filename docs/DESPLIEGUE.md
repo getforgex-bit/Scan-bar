@@ -84,12 +84,13 @@ curl -L https://codeload.github.com/getforgex-bit/Scan-bar/tar.gz/refs/heads/mai
 ### Cuentas
 
 El panel genera las contraseñas la primera vez y las muestra en **Datos → Cuentas**:
-- SuperAdmin `admin@scanbar.mx` (la primera vez que entres a *Administración* pide activar el segundo factor con una app de autenticación;
-  guarda los códigos de recuperación).
+- SuperAdmin `admin@scanbar.mx`: *Administración* pide solo su contraseña (y la vuelve a pedir tras 15 minutos sin uso). Desde ahí,
+  *Tarjetas de acceso → Descargar las tarjetas de todos los negocios (PDF)*.
 - Cajas `caja.<negocio>@scanbar.mx` (modo Caja de cada negocio).
 - **Tarjetas de acceso**: *Datos → Cuentas → Descargar tarjetas de acceso (PDF)*. Imprime y entrega a cada negocio su tarjeta:
   escaneándola en Scan-bar (pestaña Escáner, sin sesión) o con la cámara del teléfono entra como su caja, sin contraseña.
-  Generar nuevas desactiva las anteriores. Configura antes la *Conexión con Cloudflare* para que también funcionen con la cámara.
+  Descargar otra vez reimprime las mismas (las entregadas siguen sirviendo); si una se pierde, *Administración → Tarjetas de acceso →
+  Generar otra*. Configura antes la *Conexión con Cloudflare* para que también funcionen con la cámara.
 
 Para usar otras contraseñas, edita `.servidor/config.json` (`adminPassword`, `cajaPassword`; 12+ caracteres, sin `admin` ni
 `caja.<negocio>`) y vuelve a encender: el secreto manda y se cierran las sesiones abiertas.

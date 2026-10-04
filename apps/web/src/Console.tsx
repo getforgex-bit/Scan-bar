@@ -5,7 +5,7 @@ import { LabelsPdf } from './Labels';
 
 type Section = 'tenants' | 'cfgs' | 'products' | 'acceso' | 'users' | 'keys' | 'db' | 'req' | 'metrics' | 'live';
 // Primero lo de todos los días (productos, etiquetas, sincronizar); después lo técnico.
-const SECTIONS: [Section, string][] = [['products', 'Productos y etiquetas'], ['acceso', 'Acceso con QR'], ['tenants', 'Negocios'], ['users', 'Usuarios'], ['metrics', 'Métricas'], ['live', 'En vivo'],
+const SECTIONS: [Section, string][] = [['products', 'Productos y etiquetas'], ['acceso', 'Tarjetas de acceso'], ['tenants', 'Negocios'], ['users', 'Usuarios'], ['metrics', 'Métricas'], ['live', 'En vivo'],
   ...(SHOW_CONFIGURATOR ? [['cfgs', 'Configuradores'] as [Section, string]] : []), ['keys', 'Llaves'], ['db', 'Base de datos'], ['req', 'Depurador']];
 const msg = (e: unknown) => (e instanceof ApiError ? e.message : 'Error de red');
 
@@ -13,7 +13,7 @@ const msg = (e: unknown) => (e instanceof ApiError ? e.message : 'Error de red')
 export function Console({ me, refresh }: { me: Me; refresh: () => Promise<void> }) {
   const [sec, setSec] = useState<Section>('products');
   if (!me.adminUnlocked) return <Unlock onDone={refresh} />;
-  if (!me.totp) return <TotpSetup onDone={refresh} />;
+  if (me.totpRequired && !me.totp) return <TotpSetup onDone={refresh} />; // solo si el servidor exige segundo factor (ADMIN_TOTP=1)
   return (
     <div className="grid console">
       <nav aria-label="Secciones de administración" className="sidenav">
@@ -211,18 +211,18 @@ const fecha = (iso: string) => new Date(iso).toLocaleString('es-MX', { dateStyle
 function AccessCards() {
   const { data, err, reload } = useLoad<AccessRow[]>('/v1/admin/access-cards');
   const [note, setNote] = useState(''); const [busy, setBusy] = useState(false);
-  const emitir = async (rows: AccessRow[]) => {
-    const activas = rows.filter(r => r.card).length;
-    if (activas && !confirm(`${activas === 1 ? 'La tarjeta actual dejará' : `Las ${activas} tarjetas actuales dejarán`} de servir. ¿Generar ${rows.length === 1 ? 'una nueva' : 'nuevas'}?`)) return;
+  /** Descarga el PDF: las tarjetas activas se reimprimen tal cual (siguen sirviendo); con `nuevas`, se reemplazan. */
+  const pdf = async (rows: AccessRow[], nuevas = false) => {
+    if (nuevas && !confirm(`La tarjeta actual de ${rows[0].name} dejará de servir. ¿Generar otra?`)) return;
     setBusy(true); setNote('');
     try {
-      const res = await fetch('/v1/admin/access-cards', { method: 'POST', credentials: 'same-origin', headers: { 'X-Requested-With': 'pwa', 'Content-Type': 'application/json' }, body: JSON.stringify({ tenantIds: rows.map(r => r.tenantId) }) });
+      const res = await fetch('/v1/admin/access-cards', { method: 'POST', credentials: 'same-origin', headers: { 'X-Requested-With': 'pwa', 'Content-Type': 'application/json' }, body: JSON.stringify({ tenantIds: rows.map(r => r.tenantId), nuevas }) });
       if (!res.ok) { const body = await res.json().catch(() => null); if (res.status === 403 && body?.error === 'admin_locked') window.dispatchEvent(new Event('admin-locked')); throw new ApiError(res.status, body); }
       const href = URL.createObjectURL(await res.blob());
       const a = document.createElement('a'); a.href = href; a.download = `tarjetas-acceso${rows.length === 1 ? '-' + rows[0].slug : ''}.pdf`; a.click();
       setTimeout(() => URL.revokeObjectURL(href), 10_000);
       const sin = decodeURIComponent(res.headers.get('X-Sin-Caja') ?? '');
-      setNote(`PDF listo: imprime, recorta y entrega cada tarjeta a su negocio.${sin ? ` Sin cuenta de caja (no se generó): ${sin}.` : ''}`); reload();
+      setNote(`PDF listo: imprime, recorta y entrega cada tarjeta a su negocio.${nuevas ? ' La tarjeta anterior ya no sirve.' : ''}${sin ? ` Sin cuenta de caja (no se generó): ${sin}.` : ''}`); reload();
     } catch (e) { setNote('⚠ ' + msg(e)); } finally { setBusy(false); }
   };
   const desactivar = async (r: AccessRow) => {
@@ -231,15 +231,16 @@ function AccessCards() {
   };
   const conCaja = data?.filter(r => r.caja) ?? [];
   return (<>
-    <h2>Acceso con QR</h2>
-    <p className="label">Cada negocio recibe una tarjeta impresa con un QR. Al escanearla en Scan-bar (o con la cámara del teléfono) se entra como su caja, sin contraseña. Quien tenga la tarjeta puede cobrar en ese negocio; si se pierde, genera otra y la anterior deja de servir. Nunca da acceso de administrador.</p>
-    <button onClick={() => emitir(conCaja)} disabled={busy || !conCaja.length}>{busy ? 'Generando…' : 'Generar tarjetas de todos los negocios (PDF)'}</button>
+    <h2>Tarjetas de acceso</h2>
+    <p className="label">Cada negocio recibe una tarjeta impresa con un QR. Al escanearla en Scan-bar (o con la cámara del teléfono) se entra como su caja, sin contraseña. Descargar vuelve a imprimir las mismas tarjetas (las entregadas siguen sirviendo) y crea las que falten. Si una se pierde: <b>Generar otra</b> (la anterior deja de servir) o <b>Desactivar</b>. Nunca dan acceso de administrador.</p>
+    <button onClick={() => pdf(conCaja)} disabled={busy || !conCaja.length}>{busy ? 'Generando…' : 'Descargar las tarjetas de todos los negocios (PDF)'}</button>
     {err && <p className="err">⚠ {err}</p>}{note && <p className={note.startsWith('⚠') ? 'err' : 'label'} role="status">{note}</p>}
     <table><thead><tr><th className="label">Negocio</th><th className="label">Entra como</th><th className="label">Tarjeta</th><th><span className="sr">Acciones</span></th></tr></thead>
       <tbody>{data?.map(r => <tr key={r.tenantId}>
         <td>{r.name}</td><td className="mono">{r.caja ?? <span className="label">Sin cuenta de caja</span>}</td>
         <td>{r.card ? <><span className="pill ok">Activa</span> <span className="label">desde {fecha(r.card.createdAt)} · {r.card.uses} uso{r.card.uses === 1 ? '' : 's'}{r.card.lastUsedAt ? ` · último ${fecha(r.card.lastUsedAt)}` : ''}</span></> : <span className="label">Sin tarjeta</span>}</td>
-        <td className="row gap">{r.caja && <button className="secondary" disabled={busy} onClick={() => emitir([r])}>{r.card ? 'Generar otra' : 'Generar tarjeta'}</button>}
+        <td className="row gap">{r.caja && <button className="secondary" disabled={busy} onClick={() => pdf([r])}>{r.card ? 'Descargar' : 'Crear tarjeta'}</button>}
+          {r.caja && r.card && <button className="secondary" disabled={busy} onClick={() => pdf([r], true)}>Generar otra</button>}
           {r.card && <button className="secondary" onClick={() => desactivar(r)}>Desactivar</button>}</td>
       </tr>)}</tbody></table>
   </>);

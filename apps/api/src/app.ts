@@ -50,11 +50,16 @@ const productIn = z.object({
   priceCents: z.number().int().min(0), stock: z.number().int().min(0).default(0), attrs: z.record(z.string(), z.any()).default({}),
 });
 
-export type AppOpts = { db?: Db; staticDir?: string; logRequests?: boolean; timers?: boolean };
+export type AppOpts = {
+  db?: Db; staticDir?: string; logRequests?: boolean; timers?: boolean;
+  /** Segundo factor (TOTP) obligatorio para el SuperAdmin. Por omisión no (solo contraseña); ADMIN_TOTP=1 lo exige. */
+  adminTotp?: boolean;
+};
 
 export async function buildApp(opts: AppOpts = {}): Promise<FastifyInstance & { db: Db }> {
   if (isProd()) encryptSecret('arranque'); // en producción, sin TOTP_ENC_KEY no se arranca
   const db = opts.db ?? makeDb();
+  const adminTotp = opts.adminTotp ?? process.env.ADMIN_TOTP === '1';
   // TRUST_PROXY=1 cuando hay un proxy TLS delante: req.ip y req.hostname salen de X-Forwarded-*.
   // PROXY_KEY: el servidor es público (Render) y solo debe hablar con el Worker de Cloudflare, que firma cada petición.
   const proxyKey = process.env.PROXY_KEY ?? '';
@@ -199,7 +204,7 @@ export async function buildApp(opts: AppOpts = {}): Promise<FastifyInstance & { 
     }
     const role: Role = m.role ?? 'cliente'; // sin membresía = cliente registrado
     let totpOk = false;
-    if (role === 'superadmin') {
+    if (role === 'superadmin' && adminTotp) {
       const t = (await publicQuery(db, 'SELECT * FROM user_totp($1)', [m.id])).rows[0];
       if (t?.totp_enabled) {
         let good = false;
@@ -239,7 +244,7 @@ export async function buildApp(opts: AppOpts = {}): Promise<FastifyInstance & { 
     const s = req.session;
     if (!s || s.role === 'integration') return { anonymous: true };
     const tenant = s.tenantId ? (await withTenant(db, s.tenantId, tx => tx.query('SELECT id, slug, name FROM tenants WHERE id=$1', [s.tenantId]))).rows[0] : null;
-    return { role: s.role, email: s.email, tenant, totp: !!s.totp, adminUnlocked: (s.adminUntil ?? 0) > Date.now() };
+    return { role: s.role, email: s.email, tenant, totp: !!s.totp, totpRequired: adminTotp, adminUnlocked: (s.adminUntil ?? 0) > Date.now() };
   });
 
   // ---- contraseña para las funciones de administrador (confirmación tipo "sudo") ----
@@ -499,7 +504,7 @@ export async function buildApp(opts: AppOpts = {}): Promise<FastifyInstance & { 
 
   registerBuilds(app, db, { staff: auth(), anyUser, limit });
   registerWeb(app, db, { limit });
-  registerAdmin(app, db, { timers: opts.timers !== false && opts.logRequests !== false });
+  registerAdmin(app, db, { timers: opts.timers !== false && opts.logRequests !== false, totp: adminTotp });
 
   // ---- PWA estática ----
   const dir = opts.staticDir ?? fileURLToPath(new URL('../../web/dist', import.meta.url));

@@ -18,7 +18,7 @@ async function enroll(email: string, ip: string) {
 }
 
 beforeAll(async () => {
-  ctx = await makeApp({ logRequests: true }); app = ctx.app;
+  ctx = await makeApp({ logRequests: true, adminTotp: true }); app = ctx.app; // con ADMIN_TOTP=1: prueba el segundo factor
   const e = await enroll('admin4@ejemplo.mx', '10.1.0.4');
   admin = e.cookies; adminSecret = e.secret;
   pos = (await login(app, 'caja4@ejemplo.mx', POS_PW, '10.1.0.5')).cookies;
