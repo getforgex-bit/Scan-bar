@@ -57,6 +57,7 @@ La cámara exige HTTPS salvo en `localhost`. Para probar desde un teléfono, exp
 - **Servidor en tu PC**: doble clic en `Servidor Scan-bar.cmd` (Windows) o `sh servidor.sh` → panel con **un botón** para encender y
   apagar, y una pestaña **Datos** con el registro en vivo, el estado, los productos por web, la sincronización y las cuentas
   (`servidor/panel.ts`). Encender arranca PostgreSQL embebido, la app (`scripts/start.ts`) y un túnel gratuito de Cloudflare.
+  **Actualizar Scan-bar** (botón del panel, `servidor/actualizar.ts`) baja de GitHub solo lo que cambió y se reinicia solo.
 - **Dirección fija**: el Worker `scan-bar` (`cloudflare/src/index.ts`, `wrangler.jsonc` en la raíz, plan gratuito) da
   `https://scan-bar.<tu-cuenta>.workers.dev` y pasa cada visita a tu PC, firmada con una llave (`PROXY_KEY`).
 - El `Dockerfile` sigue sirviendo para un servidor en la nube. Todo en [docs/DESPLIEGUE.md](docs/DESPLIEGUE.md).

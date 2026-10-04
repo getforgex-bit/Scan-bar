@@ -20,7 +20,8 @@ Scan-bar es la base de datos única de las 6 webs (yokrem, cafe-motz, dulce-enca
 `products.origin`: `repo` (lo define el código de la web, lo mantiene `npm run sync:repos`) o `scanbar` (alta en la consola; la web lo lee de
 `GET /v1/public/t/:slug/catalog`). Variantes (talla, tamaño, gramaje) = un producto con GTIN propio (`variant_of`, `variant`). Las webs piden el
 código de una configuración con `POST /v1/public/t/:slug/configurations` (SKU + cantidad). El configurador de la PWA está oculto (`SHOW_CONFIGURATOR`, `apps/web/src/flags.ts`).
-Producción gratuita (docs/DESPLIEGUE.md): el servidor corre en la PC del usuario con el panel `servidor/panel.ts` (`npm run servidor` → `servidor/iniciar.mjs`, que instala dependencias si faltan: Postgres embebido +
+Producción gratuita (docs/DESPLIEGUE.md): el servidor corre en la PC del usuario con el panel `servidor/panel.ts` (`npm run servidor` → `servidor/iniciar.mjs`, que instala dependencias si faltan y reabre el panel cuando sale con 75/76 tras
+"Actualizar Scan-bar" (`servidor/actualizar.ts`: tar.gz de GitHub, solo archivos cambiados): Postgres embebido +
 `scripts/start.ts` + túnel de Cloudflare) y el Worker gratuito `cloudflare/src/index.ts` (`wrangler.jsonc` en la raíz) da la dirección fija y reenvía con
 `PROXY_KEY` (sin ella el servidor responde 403). `scripts/start.ts` migra, crea
 negocios y cuentas (`bootstrap.ts`, `ADMIN_PASSWORD`/`CAJA_PASSWORD`) y el servidor sincroniza las webs solo (`sync.ts`). En `*.<cuenta>.workers.dev` las webs

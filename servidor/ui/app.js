@@ -80,7 +80,7 @@ function pintar(e) {
   const v = e.version, d = v.disponible;
   $('v-instalada').textContent = v.instalada?.commit ? `${corto(v.instalada.commit)} · revisada el ${fecha(v.instalada.fecha)}` : 'Sin registrar (se compara con GitHub al abrir el panel)';
   $('v-github').textContent = d.error ? `No se pudo revisar (${d.error})` : !d.at ? 'Revisando…'
-    : d.cambios ? `Hay una versión nueva (${corto(d.commit)}): ${d.cambios} archivo${d.cambios === 1 ? '' : 's'} distinto${d.cambios === 1 ? '' : 's'}` : `${corto(d.commit)}: es la que tienes`;
+    : d.cambios ? `${corto(d.commit)}: ${d.cambios} archivo${d.cambios === 1 ? '' : 's'} distinto${d.cambios === 1 ? '' : 's'} de los tuyos (pulsa Actualizar)` : `${corto(d.commit)}: es la que tienes`;
   $('nueva').hidden = !(d.cambios > 0 || v.actualizando);
   $('nueva-texto').textContent = v.actualizando ? `${v.actualizando}…` : 'Hay una versión nueva de Scan-bar.';
   $('actualizar-1').hidden = !!v.actualizando;

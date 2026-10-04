@@ -64,14 +64,22 @@ La pestaña **Datos** muestra: estado y si responde desde internet, productos y 
 tamaño de la base, última sincronización de cada web, las cuentas con sus contraseñas, y el **registro en vivo** (filtrable, con copia), que
 también se guarda en `.servidor/registro.log`.
 
-### Actualizar Scan-bar (cuando haya una versión nueva)
+### Actualizar Scan-bar
 
-1. En el panel, **Apagar**, y cierra la ventana negra.
-2. Descarga el ZIP nuevo (*Code → Download ZIP* en GitHub) y extráelo **en el mismo lugar que la vez anterior**, eligiendo
-   **Reemplazar los archivos** (Windows propone la misma carpeta si el ZIP se llama igual). Con Git: `git pull`.
-   Tus datos (`.servidor/`: base de datos, llave y contraseñas) no están en el ZIP y se conservan.
-3. Abre el panel otra vez y pulsa **Encender**. Solo, instala lo que haya cambiado y prepara la versión nueva de la app
-   (*Preparando la versión nueva de la app*, ~1 minuto). En el navegador, la app se actualiza sola al abrirla.
+El panel compara tu copia con GitHub al abrirse y cada 6 horas. Si hay una versión nueva, la pestaña **Servidor** muestra
+*Hay una versión nueva de Scan-bar* → **Actualizar Scan-bar** (también en **Datos → Versión de Scan-bar**). Descarga solo
+los archivos que cambiaron; si el servidor estaba encendido lo apaga y lo vuelve a encender; el panel se reinicia solo,
+instala lo que haga falta y prepara la app nueva (~1 minuto). Tus datos (`.servidor/`: base, llave y contraseñas) no se tocan.
+En el navegador, la app se recarga sola con la versión nueva; al pie dice **"Versión del …"** con la fecha en que se preparó.
+
+**Si tu panel todavía no tiene ese botón** (copias anteriores al 4 de octubre de 2026), una sola vez: cierra la ventana negra
+y, en una terminal abierta en la carpeta de Scan-bar (la que tiene `package.json`), ejecuta
+
+```
+curl -L https://codeload.github.com/getforgex-bit/Scan-bar/tar.gz/refs/heads/main -o scanbar.tgz && tar -xzf scanbar.tgz --strip-components=1 && del scanbar.tgz
+```
+
+(en macOS / Linux, `rm` en lugar de `del`). Después abre el panel como siempre (`npm run servidor` o doble clic).
 
 ### Cuentas
 
@@ -99,6 +107,7 @@ apagado, copia la carpeta `.servidor/` completa.
 | "A Windows le falta Microsoft Visual C++ Redistributable" | Instálalo ([vc_redist.x64.exe](https://aka.ms/vs/17/release/vc_redist.x64.exe)) y vuelve a encender |
 | "No se pudo abrir initdb / postgres / cloudflared" | Un antivirus lo bloquea: permite la carpeta de Scan-bar y vuelve a encender |
 | `"tsx" no se reconoce como un comando` | Copia anterior del repositorio: descarga la versión actual (ya instala sola) o ejecuta `npm install` una vez |
+| La app no muestra algo nuevo (p. ej. dice *Catálogo* en vez de *Catálogo y etiquetas*) | Mira el pie de la app (*Versión del …*). Si es vieja, actualiza (sección *Actualizar Scan-bar*) y recarga la página una vez |
 | "No se pudo descargar cloudflared" | Instálalo a mano ([descargas de Cloudflare](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/)) y vuelve a encender |
 | "El panel ya está abierto" | Ya hay un panel corriendo: abre `http://127.0.0.1:4100` |
 | Encendido pero "No responde desde internet" | Revisa la conexión de la PC; el panel reintenta solo y vuelve a avisar a Cloudflare |
