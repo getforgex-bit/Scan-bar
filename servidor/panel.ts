@@ -15,6 +15,7 @@ import EmbeddedPostgres from 'embedded-postgres';
 import pg from 'pg';
 import { SOURCES } from '../apps/api/src/sync';
 import { adminEmail, cajaEmail } from '../apps/api/src/bootstrap';
+import { descargar, cambios, aplicar, REPO } from './actualizar';
 
 const exec = promisify(execFile);
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
@@ -92,8 +93,58 @@ const dbUrl = () => `postgres://postgres:${encodeURIComponent(cfg.pgPassword)}@1
 const fase = (texto: string) => { paso = texto; log('panel', `${texto}…`); };
 const esperar = (ms: number) => new Promise(r => setTimeout(r, ms));
 
+// ---------- versión y actualización (botón "Actualizar Scan-bar": descarga de GitHub solo lo que cambió) ----------
+const ARRANQUE = Date.now(); // la página del panel se recarga sola si el panel se reinició (p. ej. tras actualizar)
+const VERSION_FILE = path.join(DATA, 'version.json');
+const SUPERVISADO = process.env.SCANBAR_SUPERVISADO === '1'; // iniciar.mjs lo vuelve a abrir al salir con 75/76
+type Version = { commit: string | null; fecha: number };
+const leerVersion = (): Version | null => { try { return JSON.parse(fs.readFileSync(VERSION_FILE, 'utf8')); } catch { return null; } };
+let instalada = leerVersion();
+let disponible: { commit: string | null; cambios: number; at: number; error: string } = { commit: null, cambios: 0, at: 0, error: '' };
+let actualizando = '';
+async function revisarVersion() {
+  try {
+    const p = await descargar();
+    const n = cambios(ROOT, p).length;
+    // Sin cambios, esta copia ES esa versión (aunque se haya instalado a mano con un ZIP).
+    if (!n && p.commit && instalada?.commit !== p.commit) { instalada = { commit: p.commit, fecha: Date.now() }; fs.writeFileSync(VERSION_FILE, JSON.stringify(instalada)); }
+    disponible = { commit: p.commit, cambios: n, at: Date.now(), error: '' };
+    if (n) log('panel', `Hay una versión nueva de Scan-bar (${n} archivo${n === 1 ? '' : 's'} distinto${n === 1 ? '' : 's'}). Pulsa "Actualizar Scan-bar".`, 'aviso');
+  } catch (e: any) { disponible = { ...disponible, at: Date.now(), error: e?.cause?.code ?? e.message }; }
+}
+async function actualizar(): Promise<{ cambios: number; reinicia: boolean; mensaje: string }> {
+  if (actualizando) throw new Error('Ya se está actualizando.');
+  if (estado === 'encendiendo' || estado === 'apagando') throw new Error('Espera a que termine de encender o apagar.');
+  actualizando = 'Descargando la versión más reciente desde GitHub';
+  try {
+    log('panel', `${actualizando} (${REPO})…`);
+    const p = await descargar();
+    const lista = cambios(ROOT, p);
+    if (!lista.length) {
+      instalada = { commit: p.commit, fecha: Date.now() }; fs.writeFileSync(VERSION_FILE, JSON.stringify(instalada));
+      disponible = { commit: p.commit, cambios: 0, at: Date.now(), error: '' };
+      log('panel', 'Ya tienes la versión más reciente de Scan-bar.');
+      return { cambios: 0, reinicia: false, mensaje: 'Ya tienes la versión más reciente.' };
+    }
+    const estabaEncendido = estado === 'encendido';
+    if (estabaEncendido) { actualizando = 'Apagando para actualizar'; await apagar(); }
+    actualizando = 'Escribiendo los archivos nuevos';
+    aplicar(ROOT, lista);
+    instalada = { commit: p.commit, fecha: Date.now() }; fs.writeFileSync(VERSION_FILE, JSON.stringify(instalada));
+    log('panel', `Scan-bar actualizado: ${lista.length} archivo${lista.length === 1 ? '' : 's'} (${lista.slice(0, 8).map(a => a.ruta).join(', ')}${lista.length > 8 ? '…' : ''}).`);
+    if (!SUPERVISADO) {
+      actualizando = '';
+      return { cambios: lista.length, reinicia: false, mensaje: 'Actualizado. Cierra la ventana negra y vuelve a abrir el panel para usar la versión nueva.' };
+    }
+    actualizando = 'Reiniciando el panel con la versión nueva';
+    log('panel', `${actualizando}${estabaEncendido ? ' (se vuelve a encender solo)' : ''}…`);
+    setTimeout(() => process.exit(estabaEncendido ? 76 : 75), 500);
+    return { cambios: lista.length, reinicia: true, mensaje: 'Actualizado. El panel se reinicia solo en unos segundos.' };
+  } catch (e) { actualizando = ''; throw e; }
+}
+
 async function encender() {
-  if (estado !== 'apagado' && estado !== 'error') return;
+  if ((estado !== 'apagado' && estado !== 'error') || actualizando) return;
   estado = 'encendiendo'; error = ''; aviso = ''; deteniendo = false;
   try {
     fase('Revisando lo necesario');
@@ -359,6 +410,7 @@ function resumenEstado() {
   return {
     estado, paso, desde, error, aviso, publicUrl: cfg.publicUrl, tunelUrl, localUrl: LOCAL_URL, salud,
     configurado: !!cfg.publicUrl, equipo: `${os.hostname()} · ${os.type()} · Node ${process.versions.node}`,
+    arranque: ARRANQUE, version: { instalada, disponible, actualizando, repo: REPO },
   };
 }
 
@@ -384,6 +436,11 @@ const panel = http.createServer(async (req, res) => {
       if (estado === 'encendiendo') return json(res, 409, { ...resumenEstado(), mensaje: 'Espera a que termine de encender.' });
       void apagar(); return json(res, 202, resumenEstado());
     }
+    if (url.pathname === '/api/actualizar') {
+      try { return json(res, 200, { ...(await actualizar()), ...resumenEstado() }); }
+      catch (e: any) { log('panel', `No se pudo actualizar: ${e?.cause?.code ?? e.message}`, 'error'); return json(res, 409, { ...resumenEstado(), mensaje: `No se pudo actualizar: ${e?.cause?.code ?? e.message}` }); }
+    }
+    if (url.pathname === '/api/revisar-version') { await revisarVersion(); return json(res, 200, resumenEstado()); }
     if (url.pathname === '/api/config') {
       const b = await leerCuerpo(req);
       let pub = String(b.publicUrl ?? '').trim().replace(/\/+$/, '');
@@ -431,6 +488,9 @@ panel.listen(PANEL_PORT, '127.0.0.1', () => {
     spawn(cmd, args as string[], { stdio: 'ignore', detached: true, windowsHide: true }).on('error', () => {}).unref();
   }
   if (process.argv.includes('--encender')) void encender();
+  log('panel', instalada?.commit ? `Versión instalada: ${instalada.commit.slice(0, 7)}` : 'Versión instalada: sin registrar (se revisa contra GitHub)');
+  setTimeout(() => void revisarVersion(), 3000);
+  setInterval(() => void revisarVersion(), 6 * 60 * 60 * 1000).unref();
 });
 
 // Cerrar la ventana o Ctrl+C apaga todo en orden: túnel, app y al final la base de datos. embedded-postgres registra su

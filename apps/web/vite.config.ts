@@ -18,9 +18,10 @@ export default defineConfig({
           { src: '/icon.svg', sizes: 'any', type: 'image/svg+xml' },
         ],
       },
-      workbox: { globPatterns: ['**/*.{js,css,html,wasm,woff2,svg}'], maximumFileSizeToCacheInBytes: 8_000_000, navigateFallbackDenylist: [/^\/v1\//, /^\/01\//] },
+      workbox: { globPatterns: ['**/*.{js,css,html,wasm,woff2,svg}'], maximumFileSizeToCacheInBytes: 8_000_000, navigateFallbackDenylist: [/^\/v1\//, /^\/01\//], importScripts: ['sw-recarga.js'] },
     }),
   ],
+  define: { __BUILD__: JSON.stringify(new Date().toISOString()) }, // fecha de compilación: se ve al pie de la app
   build: { outDir: 'dist', emptyOutDir: true, assetsInlineLimit: 0 }, // sin data: URIs: la CSP solo admite recursos del propio origen
   server: { port: 5173, proxy: { '/v1': 'http://localhost:3000', '/01': 'http://localhost:3000' } },
 });

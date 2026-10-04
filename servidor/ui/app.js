@@ -41,8 +41,14 @@ try { const p = localStorage.getItem('pestana'); if (p && $(p)) abrir($(p)); } c
 
 // ---------- estado y botón ----------
 let ultimo = null;
+let arranque = null; // si el panel se reinicia (p. ej. tras actualizarse), esta página se recarga para usar su versión nueva
+let reiniciando = false;
+const fecha = (t) => new Date(t).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' });
+const corto = (c) => (c ? c.slice(0, 7) : '');
 const TEXTO = { apagado: 'Apagado', encendiendo: 'Encendiendo…', encendido: 'Encendido', apagando: 'Apagando…', error: 'No se pudo encender' };
 function pintar(e) {
+  if (arranque === null) arranque = e.arranque;
+  else if (e.arranque !== arranque) { location.reload(); return; }
   ultimo = e;
   const b = $('power');
   const ocupado = e.estado === 'encendiendo' || e.estado === 'apagando';
@@ -69,11 +75,25 @@ function pintar(e) {
   $('d-local').textContent = e.localUrl;
   $('d-equipo').textContent = e.equipo;
   if (document.activeElement !== $('pub') && !$('pub').dataset.editado) $('pub').value = e.publicUrl;
+
+  // versión: aviso en Servidor y detalle en Datos
+  const v = e.version, d = v.disponible;
+  $('v-instalada').textContent = v.instalada?.commit ? `${corto(v.instalada.commit)} · revisada el ${fecha(v.instalada.fecha)}` : 'Sin registrar (se compara con GitHub al abrir el panel)';
+  $('v-github').textContent = d.error ? `No se pudo revisar (${d.error})` : !d.at ? 'Revisando…'
+    : d.cambios ? `Hay una versión nueva (${corto(d.commit)}): ${d.cambios} archivo${d.cambios === 1 ? '' : 's'} distinto${d.cambios === 1 ? '' : 's'}` : `${corto(d.commit)}: es la que tienes`;
+  $('nueva').hidden = !(d.cambios > 0 || v.actualizando);
+  $('nueva-texto').textContent = v.actualizando ? `${v.actualizando}…` : 'Hay una versión nueva de Scan-bar.';
+  $('actualizar-1').hidden = !!v.actualizando;
+  for (const id of ['actualizar-1', 'actualizar-2', 'revisar']) $(id).disabled = !!v.actualizando || ocupado || reiniciando;
 }
 async function estado() {
   try { pintar(await (await fetch('/api/estado')).json()); }
-  catch { $('estado-texto').textContent = 'El panel se cerró'; $('estado-detalle').textContent = 'Vuelve a abrir "Servidor Scan-bar" para controlar el servidor.'; $('power').disabled = true; }
-  const rapido = ultimo && (ultimo.estado === 'encendiendo' || ultimo.estado === 'apagando');
+  catch {
+    $('estado-texto').textContent = reiniciando ? 'Reiniciando con la versión nueva…' : 'El panel se cerró';
+    $('estado-detalle').textContent = reiniciando ? 'Esta página se recarga sola en unos segundos.' : 'Vuelve a abrir "Servidor Scan-bar" para controlar el servidor.';
+    $('power').disabled = true;
+  }
+  const rapido = reiniciando || (ultimo && (ultimo.estado === 'encendiendo' || ultimo.estado === 'apagando'));
   setTimeout(estado, rapido ? 800 : 3000);
 }
 $('power').addEventListener('click', async () => {
@@ -85,6 +105,27 @@ $('power').addEventListener('click', async () => {
   pintar(await (await fetch('/api/estado')).json());
 });
 estado();
+
+async function actualizar() {
+  if (ultimo?.estado === 'encendido' && !confirm('Para actualizar, Scan-bar se apaga un momento y se vuelve a encender solo (1 a 2 minutos). ¿Continuar?')) return;
+  $('v-msg').className = 'msg'; $('v-msg').textContent = 'Descargando la versión más reciente…';
+  for (const id of ['actualizar-1', 'actualizar-2', 'revisar']) $(id).disabled = true;
+  try {
+    const r = await post('/api/actualizar'); const j = await r.json();
+    reiniciando = !!j.reinicia;
+    $('v-msg').className = 'msg' + (r.ok ? '' : ' error'); $('v-msg').textContent = j.mensaje ?? '';
+    if (!r.ok || !j.reinicia) alert(j.mensaje);
+    pintar(j);
+  } catch { $('v-msg').className = 'msg error'; $('v-msg').textContent = 'No se pudo contactar al panel.'; }
+}
+$('actualizar-1').addEventListener('click', actualizar);
+$('actualizar-2').addEventListener('click', actualizar);
+$('revisar').addEventListener('click', async () => {
+  $('v-msg').className = 'msg'; $('v-msg').textContent = 'Revisando en GitHub…';
+  const j = await (await post('/api/revisar-version')).json();
+  pintar(j);
+  $('v-msg').textContent = j.version.disponible.error ? '' : j.version.disponible.cambios ? 'Hay una versión nueva: pulsa "Actualizar Scan-bar".' : 'Ya tienes la versión más reciente.';
+});
 
 // ---------- datos ----------
 let datos = null;

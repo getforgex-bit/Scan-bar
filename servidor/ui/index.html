@@ -34,6 +34,8 @@
         <button type="button" class="link" data-copiar="enlace-a">Copiar</button>
       </p>
       <p id="aviso" class="aviso" hidden></p>
+      <p id="nueva" class="aviso" hidden><span id="nueva-texto" role="status"></span>
+        <button type="button" id="actualizar-1" class="secundario">Actualizar Scan-bar</button></p>
       <p class="nota">Mientras esté encendido, deja esta PC prendida y con internet. Cerrar esta pestaña no lo apaga; se apaga con el botón o cerrando la ventana negra del servidor.</p>
     </section>
 
@@ -49,6 +51,18 @@
           <dt>En esta PC</dt><dd id="d-local" class="mono">—</dd>
           <dt>Equipo</dt><dd id="d-equipo">—</dd>
         </dl>
+      </article>
+
+      <article class="card" aria-labelledby="h-version">
+        <h2 id="h-version">Versión de Scan-bar</h2>
+        <dl class="kv">
+          <dt>Instalada</dt><dd id="v-instalada">—</dd>
+          <dt>En GitHub</dt><dd id="v-github">—</dd>
+        </dl>
+        <p class="fila"><button type="button" id="actualizar-2">Actualizar Scan-bar</button>
+          <button type="button" class="secundario" id="revisar">Buscar versión nueva</button></p>
+        <p id="v-msg" class="msg" role="status"></p>
+        <p class="ayuda">Descarga de GitHub solo los archivos que cambiaron; tus datos, cuentas y llave no se tocan. Si el servidor está encendido, se apaga, se actualiza y se vuelve a encender solo.</p>
       </article>
 
       <article class="card" aria-labelledby="h-cf">

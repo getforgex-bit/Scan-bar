@@ -173,6 +173,7 @@ function Shell({ me, refresh }: { me: Me | null; refresh: () => Promise<void> })
               <tbody>{products.map(p => <tr key={p.id}><td>{p.name}<small className="label"> {p.sku}</small></td><td className="label">{p.category}</td><td className="mono">{fmtGtin(p.gtin)}</td><td className="num mono">{p.stock}</td><td className="num mono">{money(p.priceCents)}</td></tr>)}</tbody></table>
           </section>
         )}
+        <footer className="label version">Versión del {new Date(__BUILD__).toLocaleString('es-MX', { dateStyle: 'long', timeStyle: 'short' })}</footer>
       </main>
       {auth && <AuthDialog mode={auth.mode} note={auth.note} onClose={() => setAuth(null)} onSwitch={m => setAuth({ mode: m })} onDone={async () => { setAuth(null); await refresh(); }} />}
       {receipt && (
