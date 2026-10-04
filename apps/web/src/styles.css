@@ -88,3 +88,4 @@ tr.off td { color: var(--ink-muted); } .formrow input[type=number] { flex: 0 0 7
 .field { display: flex; flex-direction: column; gap: 4px; }
 details > .fields { margin-top: 0; }
 .version { margin-top: 48px; text-align: center; }
+.qr-result .qr-host { font: 500 20px/26px var(--font-ui); overflow-wrap: anywhere; }

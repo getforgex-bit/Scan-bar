@@ -10,6 +10,7 @@ import { sha256 } from './totp';
 import { parseDefinition } from './builds';
 import { ADMIN_UNLOCK_MS, type Session } from './session';
 import { registerCatalogAdmin } from './catalog';
+import { registerAccessAdmin } from './acceso';
 import { syncNow, syncState } from './sync';
 
 export type { Session };
@@ -187,6 +188,7 @@ export function registerAdmin(app: FastifyInstance, db: Db, opts: { timers: bool
 
   // ----- productos de todas las webs y hoja de etiquetas en PDF -----
   registerCatalogAdmin(app, db, { admin, audit });
+  registerAccessAdmin(app, db, { admin, audit });
 
   // ----- catálogo de las webs desde GitHub (también corre solo; esto lo fuerza) -----
   app.get('/v1/admin/sync', { preHandler: admin }, async () => syncState);

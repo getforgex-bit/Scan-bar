@@ -9,6 +9,8 @@ import { Campo } from './Campo';
 import { AuthDialog, type AuthMode } from './Auth';
 import { CatalogLabels } from './Labels';
 import { SHOW_CONFIGURATOR } from './flags';
+import { classifyQr, accessToken, type QrContent } from './scan/logic';
+import { QrResult } from './QrResult';
 
 type Mode = 'nav' | 'caja';
 type Tab = 'scan' | 'cfg' | 'mine' | 'cat' | 'con' | 'campo';
@@ -41,7 +43,8 @@ function Shell({ me, refresh }: { me: Me | null; refresh: () => Promise<void> })
   const [notice, setNotice] = useState('');
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [allowed, setAllowed] = useState<string[]>([]);
-  const [external, setExternal] = useState<string | null>(null);
+  const [external, setExternal] = useState<Exclude<QrContent, { kind: 'acceso' }> | null>(null);
+  const [bienvenida, setBienvenida] = useState(() => { try { const m = sessionStorage.getItem('bienvenida') ?? ''; sessionStorage.removeItem('bienvenida'); return m; } catch { return ''; } });
   const [pending, setPending] = useState(0);
   const cartRef = useRef(cart); cartRef.current = cart;
   const modeRef = useRef(mode); modeRef.current = mode;
@@ -67,6 +70,27 @@ function Shell({ me, refresh }: { me: Me | null; refresh: () => Promise<void> })
     setModePref(m); kvSet('mode', m);
   };
 
+  // Tarjeta de acceso del negocio (escaneada aquí o abierta con la cámara del teléfono): entra como su caja sin contraseña.
+  const entrarConTarjeta = async (token: string) => {
+    if (me) {
+      if (cartRef.current.length) { setNotice('⚠ Termina o vacía la compra antes de cambiar de cuenta.'); return; }
+      if (!window.confirm(`Ya entraste como ${me.email}. ¿Cerrar esa sesión y entrar con la tarjeta escaneada?`)) return;
+    }
+    setNotice('Entrando con la tarjeta…');
+    try {
+      const r = await api<{ tenant: { name: string } }>('/v1/auth/acceso', { method: 'POST', body: { token } });
+      await kvSet('mode', 'caja');
+      try { sessionStorage.setItem('bienvenida', `Entraste como caja de ${r.tenant.name}. Escanea los productos para cobrar.`); } catch { /* sin almacenamiento */ }
+      await refresh();
+    } catch (e) { setNotice('⚠ ' + (e instanceof ApiError ? e.message : 'No se pudo entrar; revisa la conexión.')); }
+  };
+  useEffect(() => {
+    if (location.pathname.replace(/\/+$/, '') !== '/acceso') return;
+    const token = accessToken(location.href);
+    history.replaceState(null, '', '/'); // el token no se queda en la barra ni en el historial
+    if (token) void entrarConTarjeta(token); else setNotice('⚠ Ese enlace de acceso está incompleto.');
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const addToCart = async (gtin: string) => {
     try {
       const r: any = await api(`/v1/scan/${gtin}`);
@@ -82,10 +106,12 @@ function Shell({ me, refresh }: { me: Me | null; refresh: () => Promise<void> })
     const m = modeRef.current; const a = r.accepted;
     const log = (e: Record<string, unknown>) => { if (staff) queueScanEvent({ mode: m, engine: r.engine, decodeMs: r.decodeMs, totalMs: r.totalMs, ...e }); };
     if ('external' in a) {
-      let host = ''; try { host = new URL(a.external).hostname; } catch { /* no es URL */ }
+      const q = classifyQr(a.external);
+      if (q.kind === 'acceso') { setExternal(null); await entrarConTarjeta(q.token); return; }
       log({ result: 'external' });
-      if (m === 'nav' && host && allowed.includes(host)) window.location.href = a.external;
-      else setExternal(a.external);
+      // Webs de los negocios: se abren directo; cualquier otro enlace se muestra para abrirlo con un toque.
+      if (m === 'nav' && q.kind === 'web' && allowed.includes(q.host)) window.location.href = q.url;
+      else setExternal(q);
       return;
     }
     if (m === 'nav') {
@@ -137,10 +163,12 @@ function Shell({ me, refresh }: { me: Me | null; refresh: () => Promise<void> })
           <div className={'grid ' + (mode === 'caja' ? 'pos' : '')}>
             <div>
               <h2>{mode === 'caja' ? 'Cobrar' : 'Escanea un código'}</h2>
-              {mode === 'nav' && <p className="label">Apunta la cámara al código de barras o al QR de un producto para abrir su página. No necesitas cuenta; si la cámara no funciona, escribe los 13 dígitos.</p>}
+              {mode === 'nav' && <p className="label">Apunta la cámara al código de barras o al QR de un producto para abrir su página, o a cualquier QR con un enlace. No necesitas cuenta; si la cámara no funciona, escribe los 13 dígitos.</p>}
+              {mode === 'nav' && !me && <p className="label">¿Trabajas en uno de los negocios? Escanea su <b>tarjeta de acceso</b> para entrar como caja, sin contraseña.</p>}
+              {bienvenida && <p className="notice" role="status">{bienvenida}</p>}
               <Scanner onReading={onReading} paused={!!external} />
-              {external && <div className="notice" role="alertdialog" aria-label="QR externo"><p>QR con dominio no registrado:</p><p className="mono wrap">{external}</p><div className="row gap"><button className="secondary" onClick={() => { window.open(external, '_blank', 'noopener'); setExternal(null); }}>Abrir de todos modos</button><button className="link" onClick={() => setExternal(null)}>Descartar</button></div></div>}
-              {notice && <p className="err" role="alert">{notice}</p>}
+              {external && <QrResult content={external} onClose={() => setExternal(null)} />}
+              {notice && (notice.startsWith('⚠') ? <p className="err" role="alert">{notice}</p> : <p className="label" role="status">{notice}</p>)}
             </div>
             {mode === 'caja' && (
               <aside className="cart">

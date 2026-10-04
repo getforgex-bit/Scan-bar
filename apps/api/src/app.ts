@@ -17,6 +17,7 @@ import { registerBuilds, bomHash } from './builds';
 import { registerWeb } from './web';
 import { issueProductCode, buildLabels, sendLabels, labelsQuery } from './catalog';
 import { isReservedEmail } from './bootstrap';
+import { hashToken, TOKEN_RE } from './acceso';
 import { newSecret, verifyTotp, otpauthUri, sha256 } from './totp';
 import { securityHeaders, rateLimiter, isLocalHost, encryptSecret, decryptSecret, passwordProblem, PAGE_CSP } from './security';
 import { STAFF, ADMIN_UNLOCK_MS, SessionStore, type Role, type Session } from './session';
@@ -212,6 +213,21 @@ export async function buildApp(opts: AppOpts = {}): Promise<FastifyInstance & { 
     fails.delete(key);
     await startSession(req, reply, { userId: Number(m.id), tenantId: m.tenant_id ?? 0, role, email, totp: totpOk, adminUntil: role === 'superadmin' ? Date.now() + ADMIN_UNLOCK_MS : undefined });
     return { role, tenantId: m.tenant_id ?? null, totpEnabled: totpOk };
+  });
+  // Tarjeta de acceso (QR impreso del negocio): entra como su caja sin contraseña. Nunca da rol de SuperAdmin.
+  app.post('/v1/auth/acceso', async (req, reply) => {
+    limit(reply, `acceso:${req.ip}`, 20, 60_000);
+    const key = `acceso|${req.ip}`;
+    if ((fails.get(key)?.lockedUntil ?? 0) > Date.now()) throw new HttpError(429, 'locked', 'Demasiados intentos; espera 15 minutos');
+    const { token } = z.object({ token: z.string().regex(TOKEN_RE, 'Esa tarjeta no es de Scan-bar') }).parse(req.body);
+    const u = (await publicQuery(db, 'SELECT * FROM access_card_login($1)', [hashToken(token)])).rows[0];
+    if (!u) { noteFail(key); throw new HttpError(401, 'tarjeta_invalida', 'Esta tarjeta ya no sirve (se generó otra o se desactivó). Pide una nueva al administrador.'); }
+    fails.delete(key);
+    const tenantId = Number(u.tenant_id);
+    await startSession(req, reply, { userId: Number(u.user_id), tenantId, role: 'operador_pos', email: u.email });
+    await db.adminRw.query('INSERT INTO audit_log (tenant_id,user_id,action) VALUES ($1,$2,$3)', [tenantId, u.user_id, 'login.tarjeta']);
+    const tenant = (await withTenant(db, tenantId, tx => tx.query('SELECT slug, name FROM tenants WHERE id=$1', [tenantId]))).rows[0];
+    return { role: 'operador_pos', tenant };
   });
   app.post('/v1/auth/logout', async (req, reply) => {
     if (req.cookies?.sid) await sessions.destroy(req.cookies.sid);

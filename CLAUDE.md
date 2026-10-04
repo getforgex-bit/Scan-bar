@@ -28,7 +28,7 @@ negocios y cuentas (`bootstrap.ts`, `ADMIN_PASSWORD`/`CAJA_PASSWORD`) y el servi
 deducen la URL de Scan-bar y Scan-bar la de cada web.
 
 ## Estructura
-`apps/api/src` (app.ts rutas, builds.ts configuradores, web.ts API para las webs, catalog.ts productos de la consola + etiquetas, labels.ts/pdf.ts PDF, admin.ts consola, security.ts, env.ts, db.ts, svg.ts) · `apps/web/src` (PWA) · `packages/codes` (GTIN y reglas, sin dependencias)
+`apps/api/src` (app.ts rutas, builds.ts configuradores, web.ts API para las webs, catalog.ts productos de la consola + etiquetas, acceso.ts tarjetas de acceso QR, labels.ts/pdf.ts PDF, admin.ts consola, security.ts, env.ts, db.ts, svg.ts) · `apps/web/src` (PWA) · `packages/codes` (GTIN y reglas, sin dependencias)
 · `db/` (migraciones, seed) · `scripts/` · `tests/` · `docs/`.
 
 ## Comandos
@@ -46,6 +46,7 @@ deducen la URL de Scan-bar y Scan-bar la de cada web.
 - Secretos solo por variables de entorno (`DB_*_PASSWORD`, `TOTP_ENC_KEY`); `.env` y `.dev-credentials.txt` están en .gitignore. Ninguna migración lleva contraseñas.
 - CSP sin `unsafe-inline`: nada de scripts ni atributos `style` en HTML; React `style={{}}` sí (CSSOM). Sin `data:` en fuentes (`assetsInlineLimit: 0`).
 - Todo endpoint público lleva límite de tasa (`limit()` de security.ts). Registrarse nunca concede roles de personal.
+- Tarjetas de acceso (`access_cards`): solo cuentas `operador_pos`, una activa por negocio, token solo en el fragmento del QR (`#k=`) y guardado como sha256.
 - Las reglas de un configurador son datos validados por `parseDefinition`; el evaluador (`packages/codes/src/rules.ts`) es el mismo en cliente y servidor.
 - No afirmar mediciones sin ejecutarlas: los números van en `docs/mediciones.md`.
 - La sincronización nunca toca ni retira productos `scanbar`; la consola solo ajusta existencias de productos `repo`.

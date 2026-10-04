@@ -21,3 +21,7 @@ export function gtinSvg(gtin: string, kind: 'ean13' | 'qr'): string {
 
 export const digitalLink = (gtin: string) =>
   toDigitalLink(gtin, resolverHost()).replace('https://', resolverHost().startsWith('localhost') ? 'http://' : 'https://');
+
+/** QR de un texto cualquiera (p. ej. el enlace de una tarjeta de acceso); sin caché: cada tarjeta es única. */
+export const textQrSvg = (text: string) =>
+  (bwipjs as any).toSVG({ bcid: 'qrcode', text, eclevel: 'M', scale: 4, barcolor: '121316', backgroundcolor: 'FFFFFF', paddingwidth: 4, paddingheight: 4 }) as string;

@@ -29,6 +29,7 @@ const doc = async (title: string, method: string, path: string, opts: { cookie?:
 
 const pos = await login('caja2@ejemplo.mx', creds.SEED_POS_PASSWORD);
 const sec = (await owner.query("SELECT totp_secret FROM users WHERE email='admin2@ejemplo.mx'")).rows[0]?.totp_secret;
+// POST /v1/auth/acceso y /v1/admin/access-cards: documentados a mano en docs/API.md (el token solo existe dentro del QR).
 await doc('POST /v1/auth/login', 'POST', '/v1/auth/login', { body: { email: 'caja2@ejemplo.mx', password: '<contraseña>' }, note: 'Argon2id, bloqueo tras 5 intentos fallidos (15 min). El SuperAdmin con TOTP activo debe enviar además `totp` (6 dígitos) o `recoveryCode`.' });
 const adm = sec ? await login('admin2@ejemplo.mx', creds.SEED_ADMIN_PASSWORD, { totp: totpNow(decryptSecret(sec)) }) : null;
 await doc('GET /v1/public/tenants (sin sesión)', 'GET', '/v1/public/tenants', { note: 'Negocios con configurador activo.' });

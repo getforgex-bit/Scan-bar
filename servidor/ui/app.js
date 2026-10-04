@@ -127,6 +127,21 @@ $('revisar').addEventListener('click', async () => {
   $('v-msg').textContent = j.version.disponible.error ? '' : j.version.disponible.cambios ? 'Hay una versión nueva: pulsa "Actualizar Scan-bar".' : 'Ya tienes la versión más reciente.';
 });
 
+// ---------- tarjetas de acceso ----------
+$('tarjetas').addEventListener('click', async () => {
+  if (!confirm('Se generan tarjetas nuevas para todos los negocios y las anteriores dejan de servir. ¿Continuar?')) return;
+  const m = $('tarjetas-msg'); m.className = 'msg'; m.textContent = 'Generando…';
+  try {
+    const r = await fetch('/api/tarjetas', { method: 'POST', headers: { 'x-panel': '1' } });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `Error ${r.status}`);
+    const href = URL.createObjectURL(await r.blob());
+    const a = document.createElement('a'); a.href = href; a.download = 'tarjetas-acceso.pdf'; a.click();
+    setTimeout(() => URL.revokeObjectURL(href), 10000);
+    m.textContent = ultimo?.configurado ? 'Listo: imprime, recorta y entrega cada tarjeta a su negocio.'
+      : 'Listo. Sin "Conexión con Cloudflare", las tarjetas solo sirven con el escáner de Scan-bar (no con la cámara del teléfono).';
+  } catch (e) { m.className = 'msg error'; m.textContent = e.message; }
+});
+
 // ---------- datos ----------
 let datos = null;
 async function cargarDatos() {

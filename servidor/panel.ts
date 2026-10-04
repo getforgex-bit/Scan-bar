@@ -16,6 +16,7 @@ import pg from 'pg';
 import { SOURCES } from '../apps/api/src/sync';
 import { adminEmail, cajaEmail } from '../apps/api/src/bootstrap';
 import { descargar, cambios, aplicar, REPO } from './actualizar';
+import { issueCards, cardsPdf } from '../apps/api/src/acceso';
 
 const exec = promisify(execFile);
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
@@ -439,6 +440,22 @@ const panel = http.createServer(async (req, res) => {
     if (url.pathname === '/api/actualizar') {
       try { return json(res, 200, { ...(await actualizar()), ...resumenEstado() }); }
       catch (e: any) { log('panel', `No se pudo actualizar: ${e?.cause?.code ?? e.message}`, 'error'); return json(res, 409, { ...resumenEstado(), mensaje: `No se pudo actualizar: ${e?.cause?.code ?? e.message}` }); }
+    }
+    if (url.pathname === '/api/tarjetas') {
+      // Tarjetas de acceso (QR) de todos los negocios con caja; las anteriores dejan de servir. Solo desde esta PC.
+      if (estado !== 'encendido') return json(res, 409, { error: 'Enciende el servidor para generar las tarjetas.' });
+      const c = new pg.Client({ connectionString: dbUrl() });
+      try {
+        await c.connect(); await c.query('BEGIN');
+        const r = await issueCards((sql, p) => c.query(sql, p), { createdBy: null, base: cfg.publicUrl || LOCAL_URL });
+        for (const k of r.cards) await c.query("INSERT INTO audit_log (tenant_id, user_id, action, after) VALUES ($1, NULL, 'access_card.issued', $2)", [k.tenantId, JSON.stringify({ caja: k.email, desde: 'panel' })]);
+        await c.query('COMMIT');
+        if (!r.cards.length) return json(res, 409, { error: 'Ningún negocio tiene cuenta de caja todavía.' });
+        log('panel', `Tarjetas de acceso nuevas: ${r.cards.map(k => k.name).join(', ')} (las anteriores ya no sirven).`);
+        res.writeHead(200, { 'content-type': 'application/pdf', 'cache-control': 'no-store', 'content-disposition': `attachment; filename="tarjetas-acceso-${new Date().toISOString().slice(0, 10)}.pdf"` });
+        return res.end(cardsPdf(r.cards));
+      } catch (e: any) { await c.query('ROLLBACK').catch(() => {}); log('panel', `No se pudieron generar las tarjetas: ${e.message}`, 'error'); return json(res, 500, { error: e.message }); }
+      finally { await c.end().catch(() => {}); }
     }
     if (url.pathname === '/api/revisar-version') { await revisarVersion(); return json(res, 200, resumenEstado()); }
     if (url.pathname === '/api/config') {

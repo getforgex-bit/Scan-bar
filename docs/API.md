@@ -16,6 +16,20 @@ Respuesta **401**:
 {"error":"bad_credentials","message":"Credenciales inválidas","requestId":"946afc31-72ed-44fb-9fe3-9268a5e5b419"}
 ```
 
+## POST /v1/auth/acceso
+
+Tarjeta de acceso (QR impreso del negocio, `…/acceso#k=<token>`): entra como la caja de ese negocio sin contraseña. El token (43 caracteres base64url) va en el cuerpo; el enlace lo lleva en el fragmento, que el navegador no envía al servidor. Solo cuentas `operador_pos` (nunca SuperAdmin); tarjeta desactivada o reemplazada → 401 `tarjeta_invalida`; formato inválido → 422; 20 intentos por minuto y bloqueo de 15 min por IP tras 5 tarjetas inválidas. Queda en `audit_log` (`login.tarjeta`).
+
+```bash
+curl -X POST  -H 'X-Requested-With: x' -H 'Content-Type: application/json' -d '{"token":"<token de la tarjeta>"}' 'http://localhost:3000/v1/auth/acceso'
+```
+
+Respuesta **200** (y cookie de sesión):
+
+```json
+{"role":"operador_pos","tenant":{"slug":"tienda-0003","name":"Café Origen"}}
+```
+
 ## GET /v1/public/tenants (sin sesión)
 
 Negocios con configurador activo.
@@ -438,3 +452,7 @@ Respuesta **403**:
 ## Otros endpoints
 
 `POST /v1/auth/logout`, `GET /v1/auth/me`, `POST /v1/auth/totp/setup|verify`, `POST /v1/products/import` (CSV `sku,name,category,price_cents,stock[,attrs]`), `GET /v1/me/builds` y `GET /v1/me/builds/:gtin` (configuraciones guardadas de la cuenta), `POST /v1/auth/admin-unlock`, `POST /v1/scan-events`, `GET /v1/box/metrics`, `POST /v1/tenants/:id/check-link`, `PATCH /v1/admin/tenants/:id`, `POST /v1/admin/tenants|users|keys|configurators`, `OPTIONS /v1/public/t/:slug/catalog|configurations` (preflight CORS), `PATCH /v1/admin/configurators/:id`, `POST /v1/admin/keys/:id/deactivate`, `POST /v1/admin/alerts/evaluate`, `GET /v1/admin/stream` (SSE). Llaves de integración: cabecera `x-api-key`, solo `POST /v1/builds` y `GET /v1/products`.
+
+## GET /v1/admin/access-cards · POST /v1/admin/access-cards · POST /v1/admin/access-cards/:tenantId/revoke
+
+Consola (*Administración → Acceso con QR*). `GET`: por negocio, su cuenta de caja (`caja`) y la tarjeta activa (`card`: `createdAt`, `lastUsedAt`, `uses`, o `null`). `POST` con `{"tenantIds":[…]}` (o sin cuerpo: todos) emite tarjetas nuevas, desactiva las anteriores de esos negocios y responde el PDF para imprimir (`tarjetas-acceso-<fecha>.pdf`; negocios sin caja en la cabecera `X-Sin-Caja`). El token solo existe dentro del QR del PDF: no se guarda (solo su sha256) ni se registra. `…/revoke` desactiva la tarjeta de un negocio (404 si no tenía). Todo queda en `audit_log`.

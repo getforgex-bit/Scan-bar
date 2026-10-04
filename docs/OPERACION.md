@@ -20,6 +20,7 @@ npm run build && npm start
 ## Cuentas y administración
 - En producción, el arranque crea `admin@scanbar.mx` y `caja.<negocio>@scanbar.mx` con `ADMIN_PASSWORD` / `CAJA_PASSWORD`; el secreto manda (si cambia, la cuenta toma la nueva contraseña y se cierran sus sesiones) y esos correos no se pueden registrar desde la app.
 - Registrarse (solo con el configurador visible) crea una cuenta de **cliente** sin permisos. Para dar acceso de operador o SuperAdmin: *Administración → Usuarios* (mismo correo + negocio + rol).
+- **Tarjetas de acceso (QR, sin contraseña)**: panel → *Datos → Cuentas → Descargar tarjetas de acceso (PDF)*, o *Administración → Acceso con QR* (todas o una por negocio). Cada tarjeta entra como la caja de su negocio al escanearla en el escáner de Scan-bar (sin sesión) o con la cámara del teléfono (necesita la dirección pública configurada). Es una llave física: quien la tenga puede cobrar en ese negocio. Si se pierde, genera otra (la anterior deja de servir) o *Desactivar*. Nunca da acceso de administrador; usos y emisiones en `audit_log`.
 - *Administración* pide la contraseña de la cuenta (vigencia de 15 min, se renueva con el uso; "Bloquear ahora" la cierra) y segundo factor TOTP.
 - **Nuevo configurador para un negocio**: 1) *Administración → Productos*: da de alta las opciones (la categoría decide el grupo; los atributos alimentan las reglas; precio 0 = sin costo). 2) *Administración → Configuradores → Nuevo*: define grupos y reglas. El cambio es inmediato para los clientes y queda en `audit_log`.
 
